@@ -1,21 +1,36 @@
 import Phaser from 'phaser';
 import { Runner } from './Runner.js';
+import { THEMES, themeForHour } from './themes.js';
+import { formatPace, formatDistance, formatDuration } from './format.js';
 
 export const WIDTH = 960;
 export const HEIGHT = 540;
 
-const GROUND_Y = 430; // 땅이 시작되는 높이(픽셀)
-const RUNNER_X = 260; // 아바타가 서 있는 가로 위치(아바타는 제자리, 배경이 움직임)
-const PIXELS_PER_METER = 40; // 게임 화면에서 1m = 40픽셀
-const MARKER_EVERY_METERS = 50; // 몇 m마다 거리 표지판을 세울지
+// ── 카메라 설정 (뒤에서 따라가는 시점) ──────────────────────────────
+// 원근법: 멀리 있는 것(z가 큰 것)일수록 작고 지평선 가까이에 그려짐
+//   화면 x = 가운데 + 가로위치 × (FOCAL / 거리)
+//   화면 y = 지평선 + (카메라높이 - 물체높이) × (FOCAL / 거리)
+const HORIZON_Y = 220; // 지평선 높이(픽셀)
+const CENTER_X = WIDTH / 2;
+const FOCAL = 500; // 렌즈 배율 (클수록 확대)
+const CAM_HEIGHT = 2; // 카메라 높이(m)
+const NEAR_Z = (FOCAL * CAM_HEIGHT) / (HEIGHT - HORIZON_Y); // 화면 맨 아래에 보이는 땅까지 거리(m)
+const FAR_Z = 90; // 이보다 먼 곳은 안개로 가림
 
-// 배경 층별 이동 비율. 멀리 있을수록 천천히 움직여야 입체감이 생김(패럴랙스)
-const PARALLAX = {
-  clouds: 0.05,
-  mountains: 0.15,
-  hills: 0.4,
-  ground: 1,
-};
+// ── 트랙 (8레인, 레인 폭 1.22m. 캐릭터는 가운데 레인) ─────────────
+const LANE_W = 1.22;
+const LANE_COUNT = 8;
+const TRACK_LEFT = -LANE_W / 2 - 3 * LANE_W;
+const TRACK_RIGHT = TRACK_LEFT + LANE_W * LANE_COUNT;
+const LAMP_EVERY = 20; // 가로등 간격(m)
+
+const RUNNER_SCREEN_Y = 440; // 캐릭터 발 위치(픽셀)
+
+// 땅 위의 점(x, z)을 화면 좌표로. h = 땅에서의 높이(m)
+function project(x, z, h = 0) {
+  const s = FOCAL / z;
+  return { x: CENTER_X + x * s, y: HORIZON_Y + (CAM_HEIGHT - h) * s, s };
+}
 
 export class RunScene extends Phaser.Scene {
   constructor() {
@@ -23,158 +38,242 @@ export class RunScene extends Phaser.Scene {
   }
 
   create() {
-    this.makeTextures();
+    this.currentSpeedKmh = 0; // 화면에 쓰는 속도 (목표 속도를 부드럽게 따라감)
+    this.distanceMeters = 0; // 달린 거리
+    this.movingSeconds = 0; // 움직인 시간
 
-    // 하늘 (위는 진한 파랑, 아래는 연한 파랑 그라데이션)
-    const sky = this.add.graphics();
-    sky.fillGradientStyle(0x6bbcf0, 0x6bbcf0, 0xd9f1ff, 0xd9f1ff, 1);
-    sky.fillRect(0, 0, WIDTH, GROUND_Y);
-    this.add.circle(820, 90, 42, 0xfff3b0);
+    this.sky = this.add.graphics(); // 하늘·산 (시간대가 바뀔 때만 다시 그림)
+    this.world = this.add.graphics(); // 트랙·잔디·가로등 (매 프레임 다시 그림)
+    this.runner = new Runner(this, CENTER_X, RUNNER_SCREEN_Y);
+    this.createHud();
 
-    // 배경 층들: tileSprite는 같은 그림을 무한히 이어 붙여서 스크롤할 수 있게 해줌
-    this.clouds = this.add.tileSprite(0, 30, WIDTH, 120, 'clouds').setOrigin(0);
-    this.mountains = this.add.tileSprite(0, GROUND_Y - 190, WIDTH, 200, 'mountains').setOrigin(0);
-    this.hills = this.add.tileSprite(0, GROUND_Y - 130, WIDTH, 140, 'hills').setOrigin(0);
-    this.ground = this.add.tileSprite(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y, 'ground').setOrigin(0);
-
-    // 거리 표지판 (예: "50m")
-    this.nextMarkerMeters = MARKER_EVERY_METERS;
-    this.marker = this.add.container(0, GROUND_Y + 8);
-    const post = this.add.rectangle(0, -30, 6, 60, 0x6b4a2b);
-    const board = this.add.rectangle(0, -66, 64, 28, 0xfff8e7).setStrokeStyle(3, 0x6b4a2b);
-    this.markerText = this.add
-      .text(0, -66, '', { fontFamily: 'sans-serif', fontSize: '16px', color: '#3b2a20', fontStyle: 'bold' })
-      .setOrigin(0.5);
-    this.marker.add([post, board, this.markerText]);
-    this.updateMarkerText();
-
-    // 오리지널 캐릭터
-    this.runner = new Runner(this, RUNNER_X, GROUND_Y + 46);
-
-    // 화면 왼쪽 위 거리 표시
-    this.distanceText = this.add.text(20, 16, '', {
-      fontFamily: 'sans-serif',
-      fontSize: '26px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-      stroke: '#1d2333',
-      strokeThickness: 5,
-    });
-
-    this.currentSpeedKmh = 0; // 실제 화면에 쓰는 속도 (목표 속도를 부드럽게 따라감)
-    this.distanceMeters = 0; // 지금까지 달린 거리
+    this.themeKey = null;
+    this.updateTheme();
   }
 
   // update는 1초에 약 60번 자동으로 불림. delta = 지난 프레임 이후 흐른 시간(ms)
   update(time, delta) {
-    const dt = delta / 1000; // 초 단위로 변환
+    const dt = delta / 1000;
 
-    // 1) 속도: 슬라이더 값으로 갑자기 바뀌지 않고 서서히 가속/감속
-    const targetSpeedKmh = this.registry.get('targetSpeedKmh') ?? 0;
-    this.currentSpeedKmh += (targetSpeedKmh - this.currentSpeedKmh) * Math.min(1, dt * 3);
+    // 1) 속도: 슬라이더/GPS 값을 서서히 따라감
+    const target = this.registry.get('targetSpeedKmh') ?? 0;
+    this.currentSpeedKmh += (target - this.currentSpeedKmh) * Math.min(1, dt * 3);
     if (Math.abs(this.currentSpeedKmh) < 0.01) this.currentSpeedKmh = 0;
 
-    // 2) 거리: km/h -> m/s 로 바꿔서 흐른 시간만큼 더함
-    const speedMps = this.currentSpeedKmh / 3.6;
-    this.distanceMeters += speedMps * dt;
+    // 2) 거리와 시간
+    this.distanceMeters += (this.currentSpeedKmh / 3.6) * dt;
+    if (this.currentSpeedKmh >= 0.5) this.movingSeconds += dt;
 
-    // 3) 배경 스크롤: 1초에 움직일 픽셀 = 초속(m/s) × 1m당 픽셀
-    const scrollPx = speedMps * PIXELS_PER_METER * dt;
-    this.clouds.tilePositionX += scrollPx * PARALLAX.clouds + 4 * dt; // 구름은 바람에 조금씩 흘러감
-    this.mountains.tilePositionX += scrollPx * PARALLAX.mountains;
-    this.hills.tilePositionX += scrollPx * PARALLAX.hills;
-    this.ground.tilePositionX += scrollPx * PARALLAX.ground;
+    // 3) 그리기
+    this.updateTheme();
+    this.drawWorld();
+    this.runner.update(this.currentSpeedKmh, dt, time / 1000);
+    this.updateHud();
+  }
 
-    // 4) 거리 표지판: "표지판까지 남은 거리"만큼 아바타 앞쪽에 배치
-    this.marker.x = RUNNER_X + (this.nextMarkerMeters - this.distanceMeters) * PIXELS_PER_METER;
-    if (this.marker.x < -60) {
-      this.nextMarkerMeters += MARKER_EVERY_METERS;
-      this.updateMarkerText();
+  // ── 시간대(밤낮) ──────────────────────────────────────────────
+  updateTheme() {
+    const override = this.registry.get('themeOverride'); // 테스트용 강제 선택
+    const key = override && override !== 'auto' ? override : themeForHour(new Date().getHours());
+    if (key === this.themeKey) return;
+    this.themeKey = key;
+    this.theme = THEMES[key];
+    this.drawSky();
+  }
+
+  drawSky() {
+    const t = this.theme;
+    const g = this.sky;
+    g.clear();
+
+    g.fillGradientStyle(t.skyTop, t.skyTop, t.skyBottom, t.skyBottom, 1);
+    g.fillRect(0, 0, WIDTH, HORIZON_Y);
+
+    if (this.themeKey === 'night') {
+      // 별 (매번 같은 자리에 찍히도록 고정된 규칙으로 위치 계산)
+      for (let i = 0; i < 70; i++) {
+        const x = (i * 137.5) % WIDTH;
+        const y = ((i * 71.3) % (HORIZON_Y - 40)) + 6;
+        g.fillStyle(0xffffff, 0.35 + ((i * 13) % 10) / 15);
+        g.fillCircle(x, y, i % 7 === 0 ? 1.8 : 1.1);
+      }
+      g.fillStyle(0xf4f1d0);
+      g.fillCircle(780, 70, 26); // 달
+      g.fillStyle(t.skyTop);
+      g.fillCircle(792, 62, 22); // 초승달 모양 만들기
+    } else if (this.themeKey === 'evening') {
+      g.fillStyle(0xffc36b, 0.35);
+      g.fillCircle(720, HORIZON_Y - 75, 60);
+      g.fillStyle(0xffb35c);
+      g.fillCircle(720, HORIZON_Y - 75, 36); // 지는 해
+    } else {
+      g.fillStyle(0xfff3b0, 0.4);
+      g.fillCircle(790, 70, 52);
+      g.fillStyle(0xfff3b0);
+      g.fillCircle(790, 70, 36); // 해
+      g.fillStyle(0xffffff, 0.9);
+      for (const [x, y] of [[440, 50], [620, 125]]) {
+        g.fillEllipse(x, y, 110, 36);
+        g.fillEllipse(x - 40, y + 8, 70, 26);
+        g.fillEllipse(x + 44, y + 6, 76, 28);
+      }
     }
 
-    // 5) 아바타 애니메이션
-    this.runner.update(this.currentSpeedKmh, dt, time / 1000);
-
-    // 6) 거리 글자
-    this.distanceText.setText(`🏁 ${formatDistance(this.distanceMeters)}`);
+    // 먼 산과 가까운 언덕 (지평선 위에 고정)
+    this.drawHills(g, t.farHills, 55, [0.9, 2.3], 22);
+    this.drawHills(g, t.nearHills, 26, [1.7, 3.9], 10);
   }
 
-  updateMarkerText() {
-    this.markerText.setText(formatDistance(this.nextMarkerMeters));
+  drawHills(g, color, height, waves, wobble) {
+    const points = [{ x: 0, y: HORIZON_Y }];
+    for (let x = 0; x <= WIDTH; x += 12) {
+      const y =
+        HORIZON_Y - height + wobble * Math.sin((x / WIDTH) * Math.PI * 2 * waves[0]) +
+        wobble * 0.6 * Math.sin((x / WIDTH) * Math.PI * 2 * waves[1] + 1);
+      points.push({ x, y });
+    }
+    points.push({ x: WIDTH, y: HORIZON_Y });
+    g.fillStyle(color);
+    g.fillPoints(points, true);
   }
 
-  // 그림 파일 없이 코드로 배경 그림(텍스처)을 만듦
-  makeTextures() {
-    const draw = (key, width, height, paint) => {
-      const g = this.make.graphics({}, false);
-      paint(g);
-      g.generateTexture(key, width, height);
-      g.destroy();
-    };
+  // ── 트랙 그리기 (매 프레임) ────────────────────────────────────
+  drawWorld() {
+    const t = this.theme;
+    const g = this.world;
+    g.clear();
 
-    // 구름
-    draw('clouds', 960, 120, (g) => {
-      g.fillStyle(0xffffff, 0.9);
-      for (const [x, y] of [[150, 55], [520, 35], [810, 70]]) {
-        g.fillEllipse(x, y, 90, 36);
-        g.fillEllipse(x - 35, y + 8, 60, 26);
-        g.fillEllipse(x + 38, y + 6, 66, 28);
+    // 잔디 바탕 + 잔디 줄무늬(4m마다). 줄무늬가 다가오면서 달리는 느낌을 줌
+    g.fillStyle(t.grass);
+    g.fillRect(0, HORIZON_Y, WIDTH, HEIGHT - HORIZON_Y);
+    g.fillStyle(t.grassDark);
+    this.forEachStripe(8, 4, (zNear, zFar) => {
+      const yNear = project(0, zNear).y;
+      const yFar = project(0, zFar).y;
+      g.fillRect(0, yFar, WIDTH, yNear - yFar);
+    });
+
+    // 트랙 바탕 + 은은한 줄무늬(2m마다)
+    g.fillStyle(t.track);
+    this.fillGroundQuad(g, TRACK_LEFT, TRACK_RIGHT, NEAR_Z, FAR_Z);
+    g.fillStyle(t.trackDark);
+    this.forEachStripe(4, 2, (zNear, zFar) => this.fillGroundQuad(g, TRACK_LEFT, TRACK_RIGHT, zNear, zFar));
+
+    // 50m마다 트랙을 가로지르는 흰 선
+    g.fillStyle(t.line, 0.85);
+    this.forEachStripe(50, 0.15, (zNear, zFar) => this.fillGroundQuad(g, TRACK_LEFT, TRACK_RIGHT, zNear, zFar));
+
+    // 레인 선 (바깥 선은 조금 더 굵게)
+    g.fillStyle(t.line);
+    for (let i = 0; i <= LANE_COUNT; i++) {
+      const x = TRACK_LEFT + i * LANE_W;
+      const half = i === 0 || i === LANE_COUNT ? 0.06 : 0.035;
+      this.fillGroundQuad(g, x - half, x + half, NEAR_Z, FAR_Z);
+    }
+
+    this.drawLamps(g);
+
+    // 지평선 근처 안개 (먼 곳을 자연스럽게 흐리게)
+    g.fillGradientStyle(t.fog, t.fog, t.fog, t.fog, 0.75, 0.75, 0, 0);
+    g.fillRect(0, HORIZON_Y, WIDTH, 32);
+  }
+
+  // 가로등: 트랙 양옆에 20m마다. 저녁/밤에는 불이 켜짐
+  drawLamps(g) {
+    const t = this.theme;
+    const sides = [
+      { x: TRACK_LEFT - 1.6, dir: 1 },
+      { x: TRACK_RIGHT + 1.6, dir: -1 },
+    ];
+    // 먼 것부터 그려야 가까운 것이 위에 덮임
+    const first = Math.ceil((this.distanceMeters + NEAR_Z) / LAMP_EVERY);
+    const last = Math.floor((this.distanceMeters + FAR_Z) / LAMP_EVERY);
+    for (let k = last; k >= first; k--) {
+      const z = k * LAMP_EVERY - this.distanceMeters;
+      for (const { x, dir } of sides) {
+        const base = project(x, z);
+        const top = project(x, z, 5);
+        const head = project(x + dir * 0.9, z, 4.9);
+        const s = base.s;
+
+        if (t.lampLight > 0) {
+          // 땅에 비치는 불빛
+          const pool = project(x + dir * 1.5, z);
+          g.fillStyle(0xffe9a8, 0.12 * t.lampLight);
+          g.fillEllipse(pool.x, pool.y, 5 * s, 5 * s * (CAM_HEIGHT / z) * 1.6);
+        }
+
+        g.fillStyle(t.pole);
+        g.fillRect(base.x - 0.07 * s, top.y, 0.14 * s, base.y - top.y); // 기둥
+        g.fillRect(Math.min(top.x, head.x), top.y, Math.abs(head.x - top.x), 0.1 * s); // 팔
+        g.fillStyle(t.lampLight > 0 ? 0xfff2c4 : 0xdfe3ea);
+        g.fillRect(head.x - 0.3 * s, head.y, 0.6 * s, 0.15 * s); // 전등
+
+        if (t.lampLight > 0) {
+          g.fillStyle(0xffe9a8, 0.25 * t.lampLight);
+          g.fillCircle(head.x, head.y + 0.1 * s, 0.7 * s);
+        }
       }
-    });
-
-    // 먼 산 (왼쪽 끝과 오른쪽 끝 높이가 같아야 이어 붙였을 때 자연스러움)
-    draw('mountains', 640, 200, (g) => {
-      g.fillStyle(0x93b4d6);
-      g.fillPoints(
-        [
-          { x: 0, y: 200 }, { x: 0, y: 120 }, { x: 80, y: 60 }, { x: 160, y: 110 },
-          { x: 260, y: 30 }, { x: 360, y: 100 }, { x: 450, y: 50 }, { x: 560, y: 120 },
-          { x: 640, y: 120 }, { x: 640, y: 200 },
-        ],
-        true
-      );
-      g.fillStyle(0xf4f8ff);
-      g.fillTriangle(237, 48, 260, 30, 286, 48);
-    });
-
-    // 가까운 언덕과 나무
-    draw('hills', 800, 140, (g) => {
-      const hillY = (x) => 80 + 18 * Math.sin((x / 800) * Math.PI * 4) + 8 * Math.sin((x / 800) * Math.PI * 6);
-      const points = [];
-      for (let x = 0; x <= 800; x += 10) points.push({ x, y: hillY(x) });
-      points.push({ x: 800, y: 140 }, { x: 0, y: 140 });
-      g.fillStyle(0x7cc576);
-      g.fillPoints(points, true);
-
-      for (const x of [120, 330, 520, 700]) {
-        const y = hillY(x);
-        g.fillStyle(0x6b4a2b);
-        g.fillRect(x - 3, y - 14, 6, 16);
-        g.fillStyle(0x3f9b4f);
-        g.fillCircle(x, y - 26, 16);
-      }
-    });
-
-    // 땅: 잔디 + 빨간 트랙 + 흰색 레인 선
-    draw('ground', 64, HEIGHT - GROUND_Y, (g) => {
-      g.fillStyle(0x6cc04a);
-      g.fillRect(0, 0, 64, 8);
-      g.fillStyle(0xd9653b);
-      g.fillRect(0, 8, 64, 64);
-      g.fillStyle(0xffffff);
-      g.fillRect(0, 12, 64, 2);
-      g.fillRect(0, 40, 32, 3); // 점선: 움직이는 게 잘 보이게 해줌
-      g.fillRect(0, 68, 64, 2);
-      g.fillStyle(0x5aa83c);
-      g.fillRect(0, 72, 64, HEIGHT - GROUND_Y - 72);
-      g.fillStyle(0x4a9431);
-      g.fillRect(12, 84, 4, 6);
-      g.fillRect(44, 96, 4, 6);
-    });
+    }
   }
-}
 
-function formatDistance(meters) {
-  if (meters < 1000) return `${Math.floor(meters)} m`;
-  return `${(meters / 1000).toFixed(2)} km`;
+  // 땅 위의 사각형(가로 xLeft~xRight, 거리 zNear~zFar)을 원근법으로 채우기
+  fillGroundQuad(g, xLeft, xRight, zNear, zFar) {
+    const a = project(xLeft, zNear);
+    const b = project(xRight, zNear);
+    const c = project(xRight, zFar);
+    const d = project(xLeft, zFar);
+    g.fillPoints([a, b, c, d], true);
+  }
+
+  // 일정 간격(period m)마다 놓인 폭 width m짜리 줄무늬 중, 화면에 보이는 것만 골라서 cb 호출
+  // 줄무늬는 땅에 고정돼 있고, 달린 거리만큼 카메라가 앞으로 가므로 줄무늬가 다가옴
+  forEachStripe(period, width, cb) {
+    const first = Math.floor((this.distanceMeters + NEAR_Z - width) / period);
+    for (let k = first; ; k++) {
+      const zA = k * period - this.distanceMeters;
+      const zB = zA + width;
+      if (zA > FAR_Z) break;
+      if (zB <= NEAR_Z) continue;
+      cb(Math.max(zA, NEAR_Z), Math.min(zB, FAR_Z));
+    }
+  }
+
+  // ── 왼쪽 위 기록판 + 오른쪽 위 시계 ─────────────────────────────
+  createHud() {
+    const box = this.add.graphics();
+    box.fillStyle(0x0d1220, 0.55);
+    box.fillRoundedRect(16, 16, 250, 132, 14);
+
+    const labelStyle = { fontFamily: 'sans-serif', fontSize: '15px', color: '#b8c2d8' };
+    const valueStyle = { fontFamily: 'sans-serif', fontSize: '28px', color: '#ffffff', fontStyle: 'bold' };
+    this.hud = {};
+    ['시간', '거리', '페이스'].forEach((label, i) => {
+      const y = 30 + i * 38;
+      this.add.text(32, y + 8, label, labelStyle);
+      this.hud[label] = this.add.text(100, y, '', valueStyle);
+    });
+
+    this.clockText = this.add
+      .text(WIDTH - 20, 20, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        backgroundColor: 'rgba(13,18,32,0.55)',
+        padding: { x: 12, y: 8 },
+      })
+      .setOrigin(1, 0);
+  }
+
+  updateHud() {
+    this.hud['시간'].setText(formatDuration(this.movingSeconds));
+    this.hud['거리'].setText(formatDistance(this.distanceMeters));
+    this.hud['페이스'].setText(`${formatPace(this.currentSpeedKmh)} /km`);
+
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    this.clockText.setText(`${this.theme.icon} ${hh}:${mm}`);
+  }
 }

@@ -22,9 +22,11 @@
       #game {
         width: 100%;
         max-width: 960px;
+        aspect-ratio: 16 / 9; /* 게임 화면 비율(960x540)에 딱 맞춤 */
         border-radius: 12px;
         overflow: hidden;
       }
+      #game canvas { display: block; }
       .panel {
         width: 100%;
         max-width: 960px;
@@ -50,6 +52,57 @@
         cursor: pointer;
       }
       .presets button:hover { background: #4a5778; }
+
+      .tabs { display: flex; gap: 6px; background: #1d2333; padding: 4px; border-radius: 10px; }
+      .tabs button {
+        flex: 1;
+        background: transparent;
+        color: #a9b3c9;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 8px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .tabs button[aria-selected='true'] { background: #3a4560; color: #fff; font-weight: 700; }
+      .mode { display: flex; flex-direction: column; gap: 12px; }
+      .mode[hidden] { display: none; }
+      .hint { margin: 0; font-size: 13px; color: #a9b3c9; line-height: 1.5; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      select {
+        background: #3a4560;
+        color: inherit;
+        border: none;
+        border-radius: 8px;
+        padding: 9px 10px;
+        font-size: 14px;
+        max-width: 100%;
+      }
+      .primary {
+        background: #ff4d6d;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .primary.running { background: #5b6680; }
+      .status {
+        font-size: 14px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #1d2333;
+        color: #d5dbe8;
+      }
+      .status:empty { display: none; }
+      .status[data-level='good'] { border-left: 4px solid #4cd18a; }
+      .status[data-level='waiting'] { border-left: 4px solid #f5c542; }
+      .status[data-level='weak'] { border-left: 4px solid #ff9f43; }
+      .status[data-level='lost'],
+      .status[data-level='error'] { border-left: 4px solid #ff4d6d; }
+      .truth .value { color: #9fe3b9; }
     </style>
   </head>
   <body>
@@ -59,6 +112,13 @@
     <div id="game"></div>
 
     <div class="panel">
+      <!-- 속도 입력 방식 고르기 -->
+      <div class="tabs" role="tablist">
+        <button role="tab" data-mode="manual" aria-selected="true">🎚️ 수동</button>
+        <button role="tab" data-mode="gps" aria-selected="false">📍 GPS</button>
+        <button role="tab" data-mode="sim" aria-selected="false">🧪 시뮬레이션</button>
+      </div>
+
       <div class="readout">
         <div>
           <div class="label">속도</div>
@@ -68,16 +128,61 @@
           <div class="label">페이스</div>
           <div class="value"><span id="pace-text">--:--</span> /km</div>
         </div>
+        <div class="truth" id="truth-card" hidden>
+          <div class="label">정답 속도 (시뮬레이션)</div>
+          <div class="value"><span id="truth-text">0.0</span> km/h <small id="truth-label"></small></div>
+        </div>
       </div>
 
-      <input id="speed-slider" type="range" min="0" max="20" step="0.5" value="8" aria-label="달리기 속도 (km/h)" />
+      <div class="status" id="status"></div>
 
-      <div class="presets">
-        <button data-speed="0">멈춤</button>
-        <button data-speed="5">걷기 5</button>
-        <button data-speed="8">조깅 8</button>
-        <button data-speed="10">러닝 10</button>
-        <button data-speed="15">질주 15</button>
+      <!-- 수동: 러닝머신이나 테스트용 -->
+      <div class="mode" data-mode-panel="manual">
+        <input id="speed-slider" type="range" min="0" max="20" step="0.5" value="8" aria-label="달리기 속도 (km/h)" />
+        <div class="presets">
+          <button data-speed="0">멈춤</button>
+          <button data-speed="5">걷기 5</button>
+          <button data-speed="8">조깅 8</button>
+          <button data-speed="10">러닝 10</button>
+          <button data-speed="15">질주 15</button>
+        </div>
+      </div>
+
+      <!-- GPS: 야외 러닝 -->
+      <div class="mode" data-mode-panel="gps" hidden>
+        <p class="hint">
+          야외에서 폰으로 사용하세요. 달리는 동안 화면을 켜 두어야 해요.<br />
+          PC에서는 위치가 움직이지 않으니 속도가 0으로 나오는 게 정상이에요.
+        </p>
+        <div class="row">
+          <button class="primary" id="gps-button">GPS 시작</button>
+        </div>
+      </div>
+
+      <!-- 시뮬레이션: PC 테스트용 가짜 GPS -->
+      <div class="mode" data-mode-panel="sim" hidden>
+        <p class="hint">
+          가짜 GPS 위치를 1초마다 만들어서 실제 GPS와 똑같은 계산을 거쳐요.<br />
+          위의 <b>속도</b>(계산값)가 <b>정답 속도</b>를 몇 초 늦게 비슷하게 따라가면 성공이에요.
+        </p>
+        <div class="row">
+          <select id="sim-scenario" aria-label="시나리오"></select>
+          <label><input type="checkbox" id="sim-noise" checked /> GPS 오차 넣기</label>
+        </div>
+        <div class="row">
+          <button class="primary" id="sim-button">시뮬레이션 시작</button>
+        </div>
+      </div>
+
+      <!-- 테스트용: 밤낮 미리보기 -->
+      <div class="row hint">
+        <label for="theme-select">🕒 배경 시간대</label>
+        <select id="theme-select">
+          <option value="auto">자동 (현재 시각)</option>
+          <option value="day">낮</option>
+          <option value="evening">저녁·새벽</option>
+          <option value="night">밤</option>
+        </select>
       </div>
     </div>
 
