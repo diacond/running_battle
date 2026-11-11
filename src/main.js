@@ -56,13 +56,17 @@ function renderTracker() {
   if (errorText) return setStatus(errorText, 'error');
 
   const acc = tracker.lastAccuracy != null ? `±${Math.round(tracker.lastAccuracy)}m` : '-';
+  const since = tracker.secondsSinceLast();
+  // 원인 찾기용 정보: 받은 횟수, 마지막으로 받은 지 몇 초
+  const info = since == null ? '아직 수신 없음' : `${tracker.count}회 수신 · 마지막 ${Math.floor(since)}초 전`;
   const messages = {
-    waiting: `신호 받는 중… 몇 초만 기다려 주세요 (${tracker.count}회 수신)`,
-    good: `신호 양호 · 오차 ${acc} · ${tracker.count}회 수신`,
-    weak: `신호 약함 (오차 ${acc}) · 이 위치는 버리고 직전 속도 유지`,
-    lost: '신호 끊김 · 캐릭터를 멈춥니다',
+    waiting: `신호 받는 중… 몇 초만 기다려 주세요 (${info})`,
+    good: `신호 양호 · 오차 ${acc} (${info})`,
+    weak: `신호 약함 · 오차 ${acc} → 이 위치는 버림 (${info})`,
+    still: `위치 변화 없음 → 멈춰 있는 것으로 봐요 (${info})`,
+    lost: `신호 끊김 · 실외로 나가 보세요 (${info})`,
   };
-  setStatus(messages[tracker.status], tracker.status);
+  setStatus(messages[tracker.status], tracker.status === 'still' ? 'waiting' : tracker.status);
 }
 
 function startSource(start) {

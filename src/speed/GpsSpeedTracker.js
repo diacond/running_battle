@@ -11,7 +11,10 @@ const MIN_SPAN_MS = 3000; // 기록이 3초치는 쌓여야 계산 시작
 const MAX_ACCURACY_M = 30; // 오차가 30m보다 큰 위치는 믿지 않고 버림
 const STOP_KMH = 2.5; // 이보다 느리면 "멈춤"으로 봄 (가만히 있어도 GPS가 조금씩 흔들리기 때문)
 const MAX_KMH = 40; // 이보다 빠르면 잘못된 값으로 보고 잘라냄
-const LOST_MS = 6000; // 6초 넘게 새 위치가 안 오면 "신호 끊김"
+// 폰은 위치가 거의 안 바뀌면(서 있을 때, 실내) 새 위치를 잘 안 보내줌.
+// 그래서 위치가 잠깐 안 오는 건 "신호 없음"이 아니라 "안 움직이는 중"으로 봄.
+const STILL_MS = 5000; // 5초 넘게 새 위치가 없으면 "멈춰 있음"(속도 0)
+const LOST_MS = 15000; // 15초 넘게 새 위치가 없으면 그때 "신호 끊김"
 
 export class GpsSpeedTracker {
   constructor() {
@@ -21,7 +24,7 @@ export class GpsSpeedTracker {
   reset() {
     this.samples = []; // 최근 위치 기록들
     this.speedKmh = 0;
-    this.status = 'waiting'; // waiting(대기) | good(양호) | weak(약함) | lost(끊김)
+    this.status = 'waiting'; // waiting(대기) | good(양호) | weak(약함) | still(멈춰 있음) | lost(끊김)
     this.lastAccuracy = null;
     this.lastReceivedAt = null;
     this.count = 0; // 받은 위치 개수
@@ -56,12 +59,21 @@ export class GpsSpeedTracker {
     this.status = 'good';
   }
 
-  // 1초마다 불러서 신호가 끊겼는지 확인
+  // 마지막 위치를 받은 지 몇 초 지났는지
+  secondsSinceLast() {
+    return this.lastReceivedAt ? (Date.now() - this.lastReceivedAt) / 1000 : null;
+  }
+
+  // 1초마다 불러서 위치가 한동안 안 왔는지 확인
   checkLost() {
-    if (this.lastReceivedAt && Date.now() - this.lastReceivedAt > LOST_MS) {
+    const since = this.secondsSinceLast();
+    if (since == null) return;
+    if (since * 1000 > LOST_MS) {
       this.status = 'lost';
       this.speedKmh = 0;
-      this.samples = [];
+    } else if (since * 1000 > STILL_MS && this.count > 0) {
+      this.status = 'still';
+      this.speedKmh = 0;
     }
   }
 }

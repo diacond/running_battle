@@ -17,18 +17,44 @@ export function startRealGps(onPosition, onError) {
     return () => {};
   }
 
+  let lastTimestamp = 0;
+  const handlePosition = (p) => {
+    // 같은 위치가 두 번 오거나(감시 + 직접 요청), 순서가 뒤바뀐 건 무시
+    if (p.timestamp <= lastTimestamp) return;
+    lastTimestamp = p.timestamp;
+    onPosition({
+      lat: p.coords.latitude,
+      lon: p.coords.longitude,
+      accuracy: p.coords.accuracy,
+      speed: p.coords.speed, // 폰이 계산한 속도(m/s). 없으면 null
+      time: p.timestamp,
+    });
+  };
+  const highAccuracy = { enableHighAccuracy: true, maximumAge: 0 };
+
+  // 방법 1) 위치가 바뀔 때마다 알려달라고 요청 (감시)
   const watchId = navigator.geolocation.watchPosition(
-    (p) =>
-      onPosition({
-        lat: p.coords.latitude,
-        lon: p.coords.longitude,
-        accuracy: p.coords.accuracy,
-        speed: p.coords.speed, // 폰이 계산한 속도(m/s). 없으면 null
-        time: p.timestamp,
-      }),
+    handlePosition,
     (err) => onError(ERROR_MESSAGES[err.code] ?? err.message),
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+    { ...highAccuracy, timeout: 15000 }
   );
+
+  // 방법 2) 폰이 위치를 잘 안 보내줄 때를 대비해 2초마다 직접 물어봄
+  let asking = false;
+  const pollId = setInterval(() => {
+    if (asking) return; // 이전 요청이 아직 안 끝났으면 건너뜀
+    asking = true;
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        asking = false;
+        handlePosition(p);
+      },
+      () => {
+        asking = false; // 실패는 감시 쪽 에러 메시지로 충분
+      },
+      { ...highAccuracy, timeout: 5000 }
+    );
+  }, 2000);
 
   // 달리는 동안 화면이 꺼지지 않게 (화면이 꺼지면 웹앱은 GPS를 못 받음)
   let wakeLock = null;
@@ -48,6 +74,7 @@ export function startRealGps(onPosition, onError) {
 
   return () => {
     navigator.geolocation.clearWatch(watchId);
+    clearInterval(pollId);
     document.removeEventListener('visibilitychange', onVisibility);
     wakeLock?.release().catch(() => {});
   };
