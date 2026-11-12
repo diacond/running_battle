@@ -1,7 +1,7 @@
 // "🎨 캐릭터 꾸미기" 패널
 // 고른 내용은 localStorage에 저장되고, onChange로 게임 화면에 바로 반영됨
 
-import { CHARACTERS, HUMAN_OPTIONS, ACCESSORIES, PALETTES, normalizeLook } from './skins.js';
+import { HUMAN_OPTIONS, ACCESSORIES, PALETTES, normalizeLook } from './skins.js';
 
 const STORAGE_KEY = 'runningBattle.look.v1';
 
@@ -81,31 +81,24 @@ export function createLookEditor(container, look, onChange) {
     ]);
 
   function render() {
-    const rows = [
-      chips('캐릭터', CHARACTERS, (v) => current.character === v, (v) => update({ character: v })),
-    ];
-
-    if (current.character === 'human') {
-      for (const [key, { label, choices }] of Object.entries(HUMAN_OPTIONS)) {
-        rows.push(chips(label, choices, (v) => current[key] === v, (v) => update({ [key]: v })));
-      }
-      rows.push(
-        chips(
-          '소품 (여러 개 가능)',
-          ACCESSORIES,
-          (v) => current.accessories.includes(v),
-          (v) =>
-            update({
-              accessories: current.accessories.includes(v)
-                ? current.accessories.filter((a) => a !== v)
-                : [...current.accessories, v],
-            })
-        )
-      );
-      for (const [key, palette] of Object.entries(PALETTES)) rows.push(swatches(key, palette));
-    } else {
-      rows.push(el('p', { className: 'hint', textContent: '로봇과 개구리는 생김새가 정해져 있어요. 등번호만 바꿀 수 있어요.' }));
+    const rows = [];
+    for (const [key, { label, choices }] of Object.entries(HUMAN_OPTIONS)) {
+      rows.push(chips(label, choices, (v) => current[key] === v, (v) => update({ [key]: v })));
     }
+    rows.push(
+      chips(
+        '소품 (여러 개 가능)',
+        ACCESSORIES,
+        (v) => current.accessories.includes(v),
+        (v) =>
+          update({
+            accessories: current.accessories.includes(v)
+              ? current.accessories.filter((a) => a !== v)
+              : [...current.accessories, v],
+          })
+      )
+    );
+    for (const [key, palette] of Object.entries(PALETTES)) rows.push(swatches(key, palette));
 
     const number = el('input', {
       type: 'text',

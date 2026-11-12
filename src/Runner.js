@@ -1,20 +1,15 @@
 // 달리는 캐릭터 (뒷모습). 카메라가 뒤에서 따라가므로 뒷모습을 그림.
 //
 // 이 파일은 "움직임"(통통 튀기, 흔들기, 다리 휘두르는 박자)만 담당하고,
-// "생김새"는 캐릭터별 파일(src/characters/)이 담당함.
-// 새 캐릭터를 추가하려면 characters/ 에 파일을 만들고 아래 CHARACTER_MAKERS에 등록하면 됨.
+// "생김새"(옷·머리·소품)는 src/characters/human.js 가 담당함.
 //
-// 캐릭터 파일이 돌려줘야 하는 것:
+// 생김새 파일이 돌려주는 것:
 //   parts      : 몸통·머리 등 고정된 그림들 (배열)
 //   drawLimbs  : 팔다리를 매 프레임 그리는 함수 (g, swing, amount, leftKick, rightKick)
-//   animate    : (선택) 머리카락·안테나 등 따로 흔들리는 부분을 움직이는 함수
+//   animate    : (선택) 포니테일·머리띠 끈 등 따로 흔들리는 부분을 움직이는 함수
 
 import { makeHuman } from './characters/human.js';
-import { makeRobot } from './characters/robot.js';
-import { makeFrog } from './characters/frog.js';
 import { DEFAULT_LOOK } from './skins.js';
-
-const CHARACTER_MAKERS = { human: makeHuman, robot: makeRobot, frog: makeFrog };
 
 export class Runner {
   // look: 사용자가 고른 외형 (skins.js 참고)
@@ -28,8 +23,7 @@ export class Runner {
     this.body = scene.add.container(0, 0);
     this.limbs = scene.add.graphics(); // 팔다리는 모양이 계속 바뀌어서 매 프레임 다시 그림
 
-    const make = CHARACTER_MAKERS[look.character] ?? makeHuman;
-    this.character = make(scene, look);
+    this.character = makeHuman(scene, look);
 
     this.body.add([this.limbs, ...this.character.parts]);
     this.root.add([this.shadow, this.body]);

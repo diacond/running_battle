@@ -1,14 +1,8 @@
 // 캐릭터 외형(룩) 정보
-// "룩(look)" = 사용자가 고른 것 (캐릭터 종류, 옷, 소품, 색깔). localStorage에 저장됨.
+// "룩(look)" = 사용자가 고른 것 (머리, 옷, 소품, 색깔). localStorage에 저장됨.
 // 나중에 "내 사진으로 아바타 만들기"를 하면, 사진에서 뽑은 머리색·피부톤을 이 룩에 넣으면 됨.
 
-export const CHARACTERS = [
-  ['human', '🏃 사람'],
-  ['robot', '🤖 로봇'],
-  ['frog', '🐸 개구리'],
-];
-
-// 사람 캐릭터 선택지: [값, 화면에 보일 이름]
+// 선택지: [값, 화면에 보일 이름]
 export const HUMAN_OPTIONS = {
   hairStyle: { label: '머리 모양', choices: [['ponytail', '포니테일'], ['short', '짧은 머리'], ['bob', '단발']] },
   headgear: { label: '머리 위', choices: [['band', '머리띠'], ['cap', '모자'], ['none', '없음']] },
@@ -32,7 +26,6 @@ export const PALETTES = {
 };
 
 export const DEFAULT_LOOK = {
-  character: 'human',
   number: '7', // 등번호
   hairStyle: 'ponytail',
   headgear: 'band',
@@ -50,7 +43,6 @@ export const DEFAULT_LOOK = {
 // 저장된 룩에 빠진 값이 있으면 기본값으로 채움 (나중에 항목이 늘어나도 안전하게)
 export function normalizeLook(saved) {
   const look = { ...DEFAULT_LOOK, ...(saved ?? {}) };
-  if (!CHARACTERS.some(([k]) => k === look.character)) look.character = 'human';
   for (const [key, { choices }] of Object.entries(HUMAN_OPTIONS)) {
     if (!choices.some(([v]) => v === look[key])) look[key] = DEFAULT_LOOK[key];
   }
