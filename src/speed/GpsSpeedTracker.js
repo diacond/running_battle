@@ -8,7 +8,7 @@
 
 const WINDOW_MS = 10000; // 최근 10초 동안의 기록으로 속도를 계산 (짧으면 흔들리고, 길면 반응이 느림)
 const MIN_SPAN_MS = 3000; // 기록이 3초치는 쌓여야 계산 시작
-const MAX_ACCURACY_M = 30; // 오차가 30m보다 큰 위치는 믿지 않고 버림
+export const MAX_ACCURACY_M = 30; // 오차가 30m보다 큰 위치는 믿지 않고 버림
 const STOP_KMH = 2.5; // 이보다 느리면 "멈춤"으로 봄 (가만히 있어도 GPS가 조금씩 흔들리기 때문)
 const MAX_KMH = 40; // 이보다 빠르면 잘못된 값으로 보고 잘라냄
 // 폰은 위치가 거의 안 바뀌면(서 있을 때, 실내) 새 위치를 잘 안 보내줌.
@@ -113,4 +113,11 @@ function calcSpeedMps(samples) {
   }
   if (stt === 0) return 0;
   return Math.hypot(stx / stt, sty / stt); // 가로 속도와 세로 속도를 합침
+}
+
+// 위치 두 개 사이의 직선거리(m). 짧은 거리라 평면으로 근사해도 충분히 정확함
+export function distanceBetween(a, b) {
+  const metersPerLon = 111320 * Math.cos((a.lat * Math.PI) / 180);
+  const metersPerLat = 110540;
+  return Math.hypot((b.lon - a.lon) * metersPerLon, (b.lat - a.lat) * metersPerLat);
 }

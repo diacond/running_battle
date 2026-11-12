@@ -1,9 +1,13 @@
 import Phaser from 'phaser';
 import { RunScene, WIDTH, HEIGHT } from './RunScene.js';
-import { GpsSpeedTracker } from './speed/GpsSpeedTracker.js';
+import { GpsSpeedTracker, MAX_ACCURACY_M, distanceBetween } from './speed/GpsSpeedTracker.js';
 import { startRealGps } from './speed/realGps.js';
 import { startSimulation, SCENARIOS } from './speed/simulatedGps.js';
 import { formatPace } from './format.js';
+import { RunSession } from './run/RunSession.js';
+import { loadRecords, saveRecord, deleteRecord, saveActiveRun, loadActiveRun, clearActiveRun } from './run/records.js';
+import { showResult, renderRecordList } from './run/resultView.js';
+import { setKeepAwake } from './wakeLock.js';
 
 // 1) Phaser 게임 만들기
 const game = new Phaser.Game({
@@ -34,7 +38,9 @@ game.registry.set('themeOverride', themeSelect.value);
 themeSelect.addEventListener('change', () => game.registry.set('themeOverride', themeSelect.value));
 
 // 속도를 화면 숫자와 게임에 반영 (어떤 입력 방식이든 결국 여기로 모임)
+let currentKmh = 0;
 function showSpeed(kmh) {
+  currentKmh = kmh;
   $('speed-text').textContent = kmh.toFixed(1);
   $('pace-text').textContent = formatPace(kmh);
   // registry = 게임 안팎에서 같이 쓰는 공용 저장소. RunScene이 이 값을 읽어감
@@ -76,6 +82,7 @@ function startSource(start) {
     (pos) => {
       errorText = '';
       tracker.addPosition(pos);
+      onPositionForRun(pos);
       renderTracker();
     },
     (message) => {
@@ -104,7 +111,9 @@ setInterval(() => {
 }, 1000);
 
 // 4) 입력 방식(탭) 바꾸기
+let currentMode = 'manual';
 function setMode(mode) {
+  currentMode = mode;
   stopCurrentSource();
   document.querySelectorAll('.tabs button').forEach((b) => {
     b.setAttribute('aria-selected', String(b.dataset.mode === mode));
@@ -174,7 +183,156 @@ simButton.addEventListener('click', () => {
 
 setMode('manual'); // 처음엔 수동 모드
 
-// 5) PWA: 서비스 워커 등록 → 한 번 열어 두면 인터넷 없이도 실행됨
+// 5) 달리기 기록: 시작 / 일시정지 / 종료
+const startButton = $('start-button');
+const pauseButton = $('pause-button');
+const finishButton = $('finish-button');
+const keepAwake = $('keep-awake');
+let session = null; // 지금 달리는 중인 기록 (없으면 null)
+
+// "화면 켜두기" 선택은 기억해 둠
+try {
+  keepAwake.checked = localStorage.getItem('runningBattle.keepAwake') === '1';
+} catch {
+  // 무시
+}
+keepAwake.addEventListener('change', () => {
+  try {
+    localStorage.setItem('runningBattle.keepAwake', keepAwake.checked ? '1' : '0');
+  } catch {
+    // 무시
+  }
+  if (session?.state === 'running') setKeepAwake(keepAwake.checked);
+});
+
+function updateRunUi() {
+  const state = session?.state ?? 'idle';
+  startButton.hidden = state !== 'idle';
+  pauseButton.hidden = state === 'idle';
+  finishButton.hidden = state === 'idle';
+  pauseButton.textContent = state === 'paused' ? '▶ 다시 달리기' : '⏸ 일시정지';
+  // 달리는 도중에는 입력 방식을 못 바꾸게
+  document.querySelectorAll('.tabs button').forEach((b) => (b.disabled = state !== 'idle'));
+  gpsButton.disabled = state !== 'idle';
+  simButton.disabled = state !== 'idle';
+
+  const runState = $('run-state');
+  runState.dataset.state = state;
+  runState.textContent = { idle: '● 대기 중', running: '● 기록 중', paused: '● 일시정지' }[state];
+}
+
+startButton.addEventListener('click', () => {
+  session = new RunSession(currentMode);
+  lastGoodPos = null;
+  gapFrom = null;
+  // GPS/시뮬레이션 모드면 위치 받기도 같이 시작
+  if (currentMode === 'gps' && !stopSource) gpsButton.click();
+  if (currentMode === 'sim' && !stopSource) simButton.click();
+  setKeepAwake(keepAwake.checked);
+  saveActiveRun(session.toJSON());
+  updateRunUi();
+});
+
+pauseButton.addEventListener('click', () => {
+  if (session.state === 'running') {
+    session.pause();
+    setKeepAwake(false);
+  } else {
+    session.resume();
+    setKeepAwake(keepAwake.checked);
+  }
+  saveActiveRun(session.toJSON());
+  updateRunUi();
+});
+
+finishButton.addEventListener('click', () => {
+  if (!confirm('달리기를 끝내고 기록을 저장할까요?')) return;
+  session.finish();
+  const record = session.toJSON();
+  session = null;
+  clearActiveRun();
+  setKeepAwake(false);
+  if (currentMode !== 'manual') {
+    stopCurrentSource();
+    showSpeed(0);
+  }
+  updateRunUi();
+
+  if (record.elapsedMs < 10000) {
+    setStatus('10초보다 짧은 기록은 저장하지 않아요', 'waiting');
+    return;
+  }
+  setStatus('');
+  saveRecordAndShow(record);
+});
+
+function saveRecordAndShow(record, extraNote) {
+  saveRecord(record);
+  refreshRecords();
+  showResult(record, { onDelete: removeRecord, extraNote });
+}
+
+function removeRecord(record) {
+  deleteRecord(record.id);
+  refreshRecords();
+}
+
+function refreshRecords() {
+  renderRecordList(loadRecords(), (r) => showResult(r, { onDelete: removeRecord }));
+}
+
+// 화면이 꺼졌다 켜졌을 때 거리 채우기:
+// 공백 직전의 마지막 위치(gapFrom)와 공백 후 첫 위치 사이 직선거리를 더함
+let lastGoodPos = null;
+let gapFrom = null;
+const MAX_GAP_KMH = 40; // 이보다 빠르면 (차를 탔거나 위치가 튄 것) 더하지 않음
+
+function onPositionForRun(pos) {
+  if (pos.accuracy > MAX_ACCURACY_M) return;
+  if (gapFrom && session?.state === 'running') {
+    const meters = distanceBetween(gapFrom, pos);
+    const hours = (pos.time - gapFrom.time) / 3600000;
+    if (hours > 0 && meters / 1000 / hours <= MAX_GAP_KMH) session.addDistance(meters, true);
+  }
+  gapFrom = null;
+  lastGoodPos = pos;
+}
+
+// 0.25초마다 기록 갱신 + 게임 화면(HUD)에 전달
+let lastSnapshot = 0;
+setInterval(() => {
+  if (session) {
+    const hadGap = session.tick(Date.now(), currentKmh);
+    if (hadGap && lastGoodPos) gapFrom = lastGoodPos;
+    // 5초마다 진행 상황 저장 (앱이 갑자기 닫혀도 기록이 남도록)
+    if (Date.now() - lastSnapshot > 5000) {
+      saveActiveRun(session.toJSON());
+      lastSnapshot = Date.now();
+    }
+  }
+  game.registry.set('runStats', session ? { elapsedMs: session.elapsedMs, distanceM: session.distanceM } : null);
+}, 250);
+
+// 화면이 꺼지거나 다른 앱으로 갈 때 바로 저장
+document.addEventListener('visibilitychange', () => {
+  if (session && document.visibilityState === 'hidden') saveActiveRun(session.toJSON());
+});
+
+// 앱이 달리는 도중에 닫혔었다면, 저장된 지점까지를 기록으로 남김
+const unfinished = loadActiveRun();
+if (unfinished) {
+  clearActiveRun();
+  const recovered = RunSession.fromJSON(unfinished);
+  recovered.recovered = true;
+  recovered.finish(recovered.lastTick);
+  const record = recovered.toJSON();
+  if (record.elapsedMs >= 10000) saveRecordAndShow(record);
+}
+
+refreshRecords();
+updateRunUi();
+
+// 6) PWA: 서비스 워커 등록 → 한 번 열어 두면 인터넷 없이도 실행됨
 // 개발 중(npm run dev)에는 옛 파일이 저장돼서 헷갈리지 않도록 배포 버전에서만 켬
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

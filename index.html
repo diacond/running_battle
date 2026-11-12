@@ -117,6 +117,71 @@
       .status[data-level='lost'],
       .status[data-level='error'] { border-left: 4px solid #ff4d6d; }
       .truth .value { color: #9fe3b9; }
+      .tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      /* 시작 / 일시정지 / 종료 */
+      .run-controls { display: flex; gap: 10px; }
+      .run-controls button {
+        flex: 1;
+        border: none;
+        border-radius: 12px;
+        padding: 16px 12px;
+        font-size: 18px;
+        font-weight: 700;
+        color: #fff;
+        cursor: pointer;
+      }
+      .run-controls button[hidden] { display: none; }
+      #start-button { background: #ff4d6d; }
+      #pause-button { background: #3a4560; }
+      #finish-button { background: #1d2333; border: 2px solid #ff4d6d; }
+      .run-state { font-size: 13px; color: #a9b3c9; }
+      .run-state[data-state='running'] { color: #4cd18a; }
+      .run-state[data-state='paused'] { color: #f5c542; }
+
+      /* 기록 목록 */
+      h2 { margin: 0; font-size: 18px; }
+      .records { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+      .records button {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        background: #1d2333;
+        color: inherit;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 14px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .records .date { color: #a9b3c9; font-size: 13px; }
+      .records .main { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .records .sub { color: #a9b3c9; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+
+      /* 결과 화면 */
+      dialog {
+        width: min(440px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        border: none;
+        border-radius: 16px;
+        padding: 20px;
+        background: #2a3247;
+        color: #f2f4f8;
+      }
+      dialog::backdrop { background: rgba(8, 11, 20, 0.7); }
+      dialog h2 { font-size: 22px; }
+      .result-hero { font-size: 44px; font-weight: 800; margin: 12px 0 4px; font-variant-numeric: tabular-nums; }
+      .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+      .result-grid .label { font-size: 13px; color: #a9b3c9; }
+      .result-grid .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .splits { margin: 0 0 12px; padding: 0; list-style: none; font-size: 14px; font-variant-numeric: tabular-nums; }
+      .splits li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #3a4560; }
+      .dialog-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+      .ghost { background: transparent; color: #ff8fa3; border: 1px solid #ff8fa3; border-radius: 8px; padding: 10px 16px; font-size: 15px; cursor: pointer; }
     </style>
   </head>
   <body>
@@ -126,6 +191,17 @@
     <div id="game"></div>
 
     <div class="panel">
+      <!-- 달리기 시작 / 일시정지 / 종료 -->
+      <div class="run-controls">
+        <button id="start-button">▶ 시작</button>
+        <button id="pause-button" hidden>⏸ 일시정지</button>
+        <button id="finish-button" hidden>■ 종료</button>
+      </div>
+      <div class="row hint">
+        <span class="run-state" id="run-state" data-state="idle">● 대기 중</span>
+        <label><input type="checkbox" id="keep-awake" /> 달리는 동안 화면 켜두기</label>
+      </div>
+
       <!-- 속도 입력 방식 고르기 -->
       <div class="tabs" role="tablist">
         <button role="tab" data-mode="manual" aria-selected="true">🎚️ 수동</button>
@@ -165,7 +241,9 @@
       <!-- GPS: 야외 러닝 -->
       <div class="mode" data-mode-panel="gps" hidden>
         <p class="hint">
-          야외에서 폰으로 사용하세요. 달리는 동안 화면을 켜 두어야 해요.<br />
+          야외에서 폰으로 사용하세요. <b>▶ 시작</b>을 누르면 GPS도 같이 켜져요.<br />
+          웹에서는 화면이 꺼지면 GPS가 멈춰서, 꺼져 있던 구간은 <b>직선거리로 추정</b>해요.
+          (정확하게 재려면 "화면 켜두기"를 켜세요)<br />
           PC에서는 위치가 움직이지 않으니 속도가 0으로 나오는 게 정상이에요.
         </p>
         <div class="row">
@@ -199,6 +277,32 @@
         </select>
       </div>
     </div>
+
+    <!-- 내 기록 목록 -->
+    <section class="panel">
+      <h2>📋 내 기록</h2>
+      <p class="hint" id="records-empty">아직 기록이 없어요. ▶ 시작을 눌러 달려 보세요!</p>
+      <ul class="records" id="records-list"></ul>
+    </section>
+
+    <!-- 결과 화면 (달리기를 끝내거나 기록을 누르면 열림) -->
+    <dialog id="result-dialog">
+      <h2>🏁 달리기 결과</h2>
+      <div class="hint" id="result-date"></div>
+      <div class="result-hero" id="result-distance"></div>
+      <div class="result-grid">
+        <div><div class="label">시간</div><div class="value" id="result-time"></div></div>
+        <div><div class="label">평균 페이스</div><div class="value" id="result-pace"></div></div>
+        <div><div class="label">평균 속도</div><div class="value" id="result-speed"></div></div>
+        <div><div class="label">최고 속도</div><div class="value" id="result-max"></div></div>
+      </div>
+      <ul class="splits" id="result-splits"></ul>
+      <p class="hint" id="result-note"></p>
+      <div class="dialog-buttons">
+        <button class="ghost" id="result-delete">기록 삭제</button>
+        <button class="primary" id="result-close">확인</button>
+      </div>
+    </dialog>
 
     <script type="module" src="/src/main.js"></script>
   </body>

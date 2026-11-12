@@ -56,26 +56,10 @@ export function startRealGps(onPosition, onError) {
     );
   }, 2000);
 
-  // 달리는 동안 화면이 꺼지지 않게 (화면이 꺼지면 웹앱은 GPS를 못 받음)
-  let wakeLock = null;
-  const lockScreen = async () => {
-    try {
-      wakeLock = await navigator.wakeLock?.request('screen');
-    } catch {
-      // 지원하지 않는 브라우저면 그냥 넘어감
-    }
-  };
-  // 다른 앱 갔다가 돌아오면 다시 화면 켜두기 요청
-  const onVisibility = () => {
-    if (document.visibilityState === 'visible') lockScreen();
-  };
-  lockScreen();
-  document.addEventListener('visibilitychange', onVisibility);
+  // 화면 켜두기는 이제 선택 기능 (src/wakeLock.js, "화면 켜두기" 체크박스)
 
   return () => {
     navigator.geolocation.clearWatch(watchId);
     clearInterval(pollId);
-    document.removeEventListener('visibilitychange', onVisibility);
-    wakeLock?.release().catch(() => {});
   };
 }

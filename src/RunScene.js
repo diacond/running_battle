@@ -39,8 +39,7 @@ export class RunScene extends Phaser.Scene {
 
   create() {
     this.currentSpeedKmh = 0; // 화면에 쓰는 속도 (목표 속도를 부드럽게 따라감)
-    this.distanceMeters = 0; // 달린 거리
-    this.movingSeconds = 0; // 움직인 시간
+    this.distanceMeters = 0; // 화면이 앞으로 간 거리 (트랙 무늬를 움직이는 용도. 기록은 main.js의 RunSession이 함)
 
     this.sky = this.add.graphics(); // 하늘·산 (시간대가 바뀔 때만 다시 그림)
     this.world = this.add.graphics(); // 트랙·잔디·가로등 (매 프레임 다시 그림)
@@ -60,9 +59,8 @@ export class RunScene extends Phaser.Scene {
     this.currentSpeedKmh += (target - this.currentSpeedKmh) * Math.min(1, dt * 3);
     if (Math.abs(this.currentSpeedKmh) < 0.01) this.currentSpeedKmh = 0;
 
-    // 2) 거리와 시간
+    // 2) 화면을 앞으로 이동
     this.distanceMeters += (this.currentSpeedKmh / 3.6) * dt;
-    if (this.currentSpeedKmh >= 0.5) this.movingSeconds += dt;
 
     // 3) 그리기
     this.updateTheme();
@@ -267,8 +265,10 @@ export class RunScene extends Phaser.Scene {
   }
 
   updateHud() {
-    this.hud['시간'].setText(formatDuration(this.movingSeconds));
-    this.hud['거리'].setText(formatDistance(this.distanceMeters));
+    // 기록 중일 때만 시간·거리가 올라감 (시작 전에는 0)
+    const stats = this.registry.get('runStats');
+    this.hud['시간'].setText(formatDuration((stats?.elapsedMs ?? 0) / 1000));
+    this.hud['거리'].setText(formatDistance(stats?.distanceM ?? 0));
     this.hud['페이스'].setText(`${formatPace(this.currentSpeedKmh)} /km`);
 
     const now = new Date();
