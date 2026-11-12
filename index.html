@@ -2,8 +2,20 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: 노치(카메라 구멍)가 있는 폰에서도 화면 끝까지 사용 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Running Battle</title>
+
+    <!-- PWA: 홈 화면에 앱처럼 설치하기 위한 정보 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1d2333" />
+    <link rel="icon" type="image/png" href="/icons/favicon-64.png" />
+    <!-- 아이폰(Safari)은 manifest 대신 아래 태그들을 읽어요 -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="러닝배틀" />
     <style>
       * { box-sizing: border-box; }
       body {
@@ -15,7 +27,9 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 16px;
+        /* 전체화면일 때 노치·홈 바에 내용이 가려지지 않도록 안전 영역만큼 여백 */
+        padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
         gap: 16px;
       }
       h1 { margin: 0; font-size: 22px; }

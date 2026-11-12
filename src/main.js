@@ -173,3 +173,11 @@ simButton.addEventListener('click', () => {
 });
 
 setMode('manual'); // 처음엔 수동 모드
+
+// 5) PWA: 서비스 워커 등록 → 한 번 열어 두면 인터넷 없이도 실행됨
+// 개발 중(npm run dev)에는 옛 파일이 저장돼서 헷갈리지 않도록 배포 버전에서만 켬
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('서비스 워커 등록 실패', e));
+  });
+}
