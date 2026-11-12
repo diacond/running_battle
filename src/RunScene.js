@@ -43,7 +43,9 @@ export class RunScene extends Phaser.Scene {
 
     this.sky = this.add.graphics(); // 하늘·산 (시간대가 바뀔 때만 다시 그림)
     this.world = this.add.graphics(); // 트랙·잔디·가로등 (매 프레임 다시 그림)
-    this.runner = new Runner(this, CENTER_X, RUNNER_SCREEN_Y);
+    this.look = null;
+    this.runner = null;
+    this.updateRunner(); // 캐릭터 (외형은 registry의 'look'에서 읽음)
     this.createHud();
 
     this.themeKey = null;
@@ -64,9 +66,19 @@ export class RunScene extends Phaser.Scene {
 
     // 3) 그리기
     this.updateTheme();
+    this.updateRunner();
     this.drawWorld();
     this.runner.update(this.currentSpeedKmh, dt, time / 1000);
     this.updateHud();
+  }
+
+  // 캐릭터 꾸미기에서 외형이 바뀌면 캐릭터를 새로 만듦
+  updateRunner() {
+    const look = this.registry.get('look');
+    if (this.runner && look === this.look) return;
+    this.look = look;
+    this.runner?.destroy();
+    this.runner = new Runner(this, CENTER_X, RUNNER_SCREEN_Y, look ?? undefined).setDepth(10);
   }
 
   // ── 시간대(밤낮) ──────────────────────────────────────────────
@@ -239,7 +251,7 @@ export class RunScene extends Phaser.Scene {
 
   // ── 왼쪽 위 기록판 + 오른쪽 위 시계 ─────────────────────────────
   createHud() {
-    const box = this.add.graphics();
+    const box = this.add.graphics().setDepth(20); // 기록판은 캐릭터보다 위에
     box.fillStyle(0x0d1220, 0.55);
     box.fillRoundedRect(16, 16, 250, 132, 14);
 
@@ -248,8 +260,8 @@ export class RunScene extends Phaser.Scene {
     this.hud = {};
     ['시간', '거리', '페이스'].forEach((label, i) => {
       const y = 30 + i * 38;
-      this.add.text(32, y + 8, label, labelStyle);
-      this.hud[label] = this.add.text(100, y, '', valueStyle);
+      this.add.text(32, y + 8, label, labelStyle).setDepth(20);
+      this.hud[label] = this.add.text(100, y, '', valueStyle).setDepth(20);
     });
 
     this.clockText = this.add
@@ -261,7 +273,8 @@ export class RunScene extends Phaser.Scene {
         backgroundColor: 'rgba(13,18,32,0.55)',
         padding: { x: 12, y: 8 },
       })
-      .setOrigin(1, 0);
+      .setOrigin(1, 0)
+      .setDepth(20);
   }
 
   updateHud() {

@@ -8,6 +8,7 @@ import { RunSession } from './run/RunSession.js';
 import { loadRecords, saveRecord, deleteRecord, saveActiveRun, loadActiveRun, clearActiveRun } from './run/records.js';
 import { showResult, renderRecordList } from './run/resultView.js';
 import { setKeepAwake } from './wakeLock.js';
+import { loadLook, createLookEditor } from './lookEditor.js';
 
 // 1) Phaser 게임 만들기
 const game = new Phaser.Game({
@@ -22,6 +23,12 @@ const game = new Phaser.Game({
   },
   scene: [RunScene],
 });
+
+// 캐릭터 외형: 저장된 것을 불러와서 게임에 전달하고, 꾸미기 패널 만들기
+game.registry.set('look', loadLook());
+createLookEditor(document.getElementById('look-editor'), game.registry.get('look'), (look) =>
+  game.registry.set('look', look)
+);
 
 // 2) 화면 요소 가져오기
 const $ = (id) => document.getElementById(id);

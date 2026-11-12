@@ -162,6 +162,43 @@
       .records .main { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
       .records .sub { color: #a9b3c9; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 
+      /* 캐릭터 꾸미기 */
+      .look-panel summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+      .look-panel summary::-webkit-details-marker { display: none; }
+      .look-panel summary::after { content: '펼치기 ▾'; font-size: 13px; color: #a9b3c9; }
+      .look-panel[open] summary::after { content: '접기 ▴'; }
+      #look-editor { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+      .look-label { font-size: 13px; color: #a9b3c9; margin-bottom: 6px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .chip {
+        background: #3a4560;
+        color: inherit;
+        border: 2px solid transparent;
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .chip[aria-pressed='true'] { background: #ff4d6d; color: #fff; font-weight: 700; }
+      .swatch {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 2px solid #1d2333;
+        cursor: pointer;
+        padding: 0;
+      }
+      .swatch[aria-pressed='true'] { outline: 3px solid #ff4d6d; outline-offset: 2px; }
+      .number-input {
+        width: 90px;
+        background: #1d2333;
+        color: inherit;
+        border: 1px solid #3a4560;
+        border-radius: 8px;
+        padding: 9px 10px;
+        font-size: 16px;
+      }
+
       /* 결과 화면 */
       dialog {
         width: min(440px, calc(100vw - 32px));
@@ -277,6 +314,12 @@
         </select>
       </div>
     </div>
+
+    <!-- 캐릭터 꾸미기 (누르면 펼쳐짐) -->
+    <details class="panel look-panel">
+      <summary><h2>🎨 캐릭터 꾸미기</h2></summary>
+      <div id="look-editor"></div>
+    </details>
 
     <!-- 내 기록 목록 -->
     <section class="panel">
