@@ -3,12 +3,13 @@ import { RunScene, WIDTH, HEIGHT } from './RunScene.js';
 import { GpsSpeedTracker, MAX_ACCURACY_M, distanceBetween } from './speed/GpsSpeedTracker.js';
 import { startRealGps } from './speed/realGps.js';
 import { startSimulation, SCENARIOS } from './speed/simulatedGps.js';
-import { formatPace } from './format.js';
+import { formatPace, formatDuration } from './format.js';
 import { RunSession } from './run/RunSession.js';
 import { loadRecords, saveRecord, deleteRecord, saveActiveRun, loadActiveRun, clearActiveRun } from './run/records.js';
 import { showResult, renderRecordList } from './run/resultView.js';
 import { setKeepAwake } from './wakeLock.js';
 import { loadLook, createLookEditor } from './lookEditor.js';
+import { askConfirm } from './ui/confirm.js';
 
 // 1) Phaser 게임 만들기
 const game = new Phaser.Game({
@@ -34,9 +35,41 @@ createLookEditor(document.getElementById('look-editor'), game.registry.get('look
 const $ = (id) => document.getElementById(id);
 const slider = $('speed-slider');
 const statusBox = $('status');
-const gpsButton = $('gps-button');
-const simButton = $('sim-button');
+const topPill = $('top-pill');
 const simScenario = $('sim-scenario');
+
+// 설정값을 기억해 두는 작은 도우미 (저장이 안 되는 환경이면 그냥 넘어감)
+const prefs = {
+  get(key, fallback) {
+    try {
+      return localStorage.getItem(`runningBattle.${key}`) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(`runningBattle.${key}`, value);
+    } catch {
+      // 무시
+    }
+  },
+};
+
+// 3) 아래 탭 메뉴: 달리기 / 기록 / 꾸미기 / 설정
+const gameBox = $('game');
+function showTab(tab) {
+  document.querySelectorAll('.nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  document.querySelectorAll('[data-page]').forEach((page) => (page.hidden = page.dataset.page !== tab));
+  // 게임 화면은 하나뿐이라, 꾸미기 탭에서는 그쪽으로 옮겨서 캐릭터를 보여 줌
+  const home = tab === 'look' ? $('look-game-slot') : document.querySelector('[data-page="run"]');
+  if (gameBox.parentElement !== home) {
+    home.prepend(gameBox);
+    game.scale.refresh();
+  }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.nav button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 // 배경 시간대 (테스트용). 주소 끝에 ?theme=night 처럼 붙여도 됨
 const themeSelect = $('theme-select');
@@ -54,32 +87,36 @@ function showSpeed(kmh) {
   game.registry.set('targetSpeedKmh', kmh);
 }
 
-function setStatus(text, level = '') {
+// text: 버튼 아래 작은 설명 / level: 위쪽 동그라미 색 (good, waiting, weak, lost, error) / pillText: 위쪽 글자
+let signal = { text: '', level: '' };
+function setStatus(text, level = '', pillText = '') {
   statusBox.textContent = text;
-  statusBox.dataset.level = level;
+  signal = { text: pillText, level };
+  updatePill();
 }
 
-// 3) GPS 계산 결과를 화면에 보여주기 (실제 GPS와 시뮬레이션이 같이 씀)
+// 4) GPS 계산 결과를 화면에 보여주기 (실제 GPS와 시뮬레이션이 같이 씀)
 const tracker = new GpsSpeedTracker();
 let stopSource = null; // 지금 돌고 있는 GPS/시뮬레이션을 멈추는 함수
 let errorText = '';
 
 function renderTracker() {
   showSpeed(tracker.speedKmh);
-  if (errorText) return setStatus(errorText, 'error');
+  if (errorText) return setStatus(errorText, 'error', 'GPS 오류');
 
-  const acc = tracker.lastAccuracy != null ? `±${Math.round(tracker.lastAccuracy)}m` : '-';
+  const acc = tracker.lastAccuracy != null ? `오차 ±${Math.round(tracker.lastAccuracy)}m` : '';
   const since = tracker.secondsSinceLast();
   // 원인 찾기용 정보: 받은 횟수, 마지막으로 받은 지 몇 초
-  const info = since == null ? '아직 수신 없음' : `${tracker.count}회 수신 · 마지막 ${Math.floor(since)}초 전`;
+  const info = since == null ? '아직 수신 없음' : `${tracker.count}회 수신 · ${Math.floor(since)}초 전`;
   const messages = {
-    waiting: `신호 받는 중… 몇 초만 기다려 주세요 (${info})`,
-    good: `신호 양호 · 오차 ${acc} (${info})`,
-    weak: `신호 약함 · 오차 ${acc} → 이 위치는 버림 (${info})`,
-    still: `위치 변화 없음 → 멈춰 있는 것으로 봐요 (${info})`,
-    lost: `신호 끊김 · 실외로 나가 보세요 (${info})`,
+    waiting: ['신호 받는 중… 몇 초만 기다려 주세요', '신호 찾는 중'],
+    good: [`신호 양호 · ${acc}`, '신호 양호'],
+    weak: [`신호 약함 · ${acc} → 이 위치는 버려요`, '신호 약함'],
+    still: ['위치 변화 없음 → 멈춰 있는 것으로 봐요', '신호 양호'],
+    lost: ['신호 끊김 · 하늘이 트인 곳으로 가 보세요', '신호 끊김'],
   };
-  setStatus(messages[tracker.status], tracker.status === 'still' ? 'waiting' : tracker.status);
+  const [text, pill] = messages[tracker.status];
+  setStatus(`${text} (${info})`, tracker.status === 'still' ? 'good' : tracker.status, `GPS ${pill}`);
 }
 
 function startSource(start) {
@@ -100,13 +137,20 @@ function startSource(start) {
   renderTracker();
 }
 
+function startSim() {
+  const options = { noise: $('sim-noise').checked };
+  startSource((onPosition) =>
+    startSimulation(simScenario.value, options, onPosition, ({ kmh, label }) => {
+      $('truth-text').textContent = kmh.toFixed(1);
+      $('truth-label').textContent = `· ${label}`;
+    })
+  );
+  $('truth-card').hidden = false;
+}
+
 function stopCurrentSource() {
   stopSource?.();
   stopSource = null;
-  gpsButton.textContent = 'GPS 시작';
-  gpsButton.classList.remove('running');
-  simButton.textContent = '시뮬레이션 시작';
-  simButton.classList.remove('running');
   $('truth-card').hidden = true;
 }
 
@@ -117,32 +161,43 @@ setInterval(() => {
   renderTracker();
 }, 1000);
 
-// 4) 입력 방식(탭) 바꾸기
-let currentMode = 'manual';
+// 5) 속도 재는 방법 (설정 탭): GPS / 수동 / 시뮬레이션
+for (const [key, { name }] of Object.entries(SCENARIOS)) {
+  simScenario.add(new Option(name, key));
+}
+
+// 처음엔 지난번에 고른 방법. 처음 쓰는 거라면 폰은 GPS, PC는 수동
+const isPhone = matchMedia('(pointer: coarse)').matches;
+let currentMode = prefs.get('mode', isPhone ? 'gps' : 'manual');
+if (!['gps', 'manual', 'sim'].includes(currentMode)) currentMode = 'manual';
+
 function setMode(mode) {
   currentMode = mode;
+  prefs.set('mode', mode);
   stopCurrentSource();
-  document.querySelectorAll('.tabs button').forEach((b) => {
-    b.setAttribute('aria-selected', String(b.dataset.mode === mode));
+  document.querySelectorAll('#mode-buttons button').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
   });
-  document.querySelectorAll('[data-mode-panel]').forEach((panel) => {
-    panel.hidden = panel.dataset.modePanel !== mode;
-  });
+  document.querySelectorAll('[data-mode-hint]').forEach((el) => (el.hidden = el.dataset.modeHint !== mode));
+  $('manual-controls').hidden = mode !== 'manual';
 
   if (mode === 'manual') {
     showSpeed(Number(slider.value));
-    setStatus('');
+    setStatus('', '', '수동 모드');
+  } else if (mode === 'gps') {
+    // GPS는 미리 켜서 신호를 잡아 둠 → 시작 누르자마자 정확하게 잴 수 있음
+    startSource(startRealGps);
   } else {
     showSpeed(0);
-    setStatus(mode === 'gps' ? 'GPS 시작 버튼을 눌러 주세요' : '시뮬레이션 시작 버튼을 눌러 주세요', 'waiting');
+    setStatus('▶ 시작을 누르면 가짜 GPS가 움직여요', '', '시뮬레이션');
   }
 }
 
-document.querySelectorAll('.tabs button').forEach((b) => {
+document.querySelectorAll('#mode-buttons button').forEach((b) => {
   b.addEventListener('click', () => setMode(b.dataset.mode));
 });
 
-// 수동 모드
+// 수동 모드: 슬라이더와 빠른 선택 버튼
 slider.addEventListener('input', () => showSpeed(Number(slider.value)));
 document.querySelectorAll('.presets button').forEach((button) => {
   button.addEventListener('click', () => {
@@ -151,46 +206,7 @@ document.querySelectorAll('.presets button').forEach((button) => {
   });
 });
 
-// GPS 모드
-gpsButton.addEventListener('click', () => {
-  if (stopSource) {
-    stopCurrentSource();
-    showSpeed(0);
-    setStatus('GPS를 멈췄어요', 'waiting');
-    return;
-  }
-  startSource(startRealGps);
-  gpsButton.textContent = 'GPS 중지';
-  gpsButton.classList.add('running');
-});
-
-// 시뮬레이션 모드
-for (const [key, { name }] of Object.entries(SCENARIOS)) {
-  simScenario.add(new Option(name, key));
-}
-
-simButton.addEventListener('click', () => {
-  if (stopSource) {
-    stopCurrentSource();
-    showSpeed(0);
-    setStatus('시뮬레이션을 멈췄어요', 'waiting');
-    return;
-  }
-  const options = { noise: $('sim-noise').checked };
-  startSource((onPosition) =>
-    startSimulation(simScenario.value, options, onPosition, ({ kmh, label }) => {
-      $('truth-text').textContent = kmh.toFixed(1);
-      $('truth-label').textContent = `· ${label}`;
-    })
-  );
-  $('truth-card').hidden = false;
-  simButton.textContent = '시뮬레이션 중지';
-  simButton.classList.add('running');
-});
-
-setMode('manual'); // 처음엔 수동 모드
-
-// 5) 달리기 기록: 시작 / 일시정지 / 종료
+// 6) 달리기 기록: 시작 / 일시정지 / 종료
 const startButton = $('start-button');
 const pauseButton = $('pause-button');
 const finishButton = $('finish-button');
@@ -198,43 +214,50 @@ const keepAwake = $('keep-awake');
 let session = null; // 지금 달리는 중인 기록 (없으면 null)
 
 // "화면 켜두기" 선택은 기억해 둠
-try {
-  keepAwake.checked = localStorage.getItem('runningBattle.keepAwake') === '1';
-} catch {
-  // 무시
-}
+keepAwake.checked = prefs.get('keepAwake', '0') === '1';
 keepAwake.addEventListener('change', () => {
-  try {
-    localStorage.setItem('runningBattle.keepAwake', keepAwake.checked ? '1' : '0');
-  } catch {
-    // 무시
-  }
+  prefs.set('keepAwake', keepAwake.checked ? '1' : '0');
   if (session?.state === 'running') setKeepAwake(keepAwake.checked);
 });
+
+// 위쪽 동그라미: 달리는 중이면 기록 상태, 아니면 신호 상태
+function updatePill() {
+  const state = session?.state ?? 'idle';
+  topPill.dataset.state = state;
+  if (state === 'idle') {
+    topPill.textContent = signal.text || '대기 중';
+    topPill.dataset.level = signal.level;
+  } else {
+    topPill.textContent = state === 'running' ? '기록 중' : '일시정지';
+    topPill.dataset.level = '';
+  }
+}
 
 function updateRunUi() {
   const state = session?.state ?? 'idle';
   startButton.hidden = state !== 'idle';
   pauseButton.hidden = state === 'idle';
   finishButton.hidden = state === 'idle';
-  pauseButton.textContent = state === 'paused' ? '▶ 다시 달리기' : '⏸ 일시정지';
-  // 달리는 도중에는 입력 방식을 못 바꾸게
-  document.querySelectorAll('.tabs button').forEach((b) => (b.disabled = state !== 'idle'));
-  gpsButton.disabled = state !== 'idle';
-  simButton.disabled = state !== 'idle';
+  pauseButton.textContent = state === 'paused' ? '▶ 계속' : '⏸ 일시정지';
+  // 달리는 도중에는 속도 재는 방법을 못 바꾸게
+  document.querySelectorAll('#mode-buttons button').forEach((b) => (b.disabled = state !== 'idle'));
+  $('mode-locked').hidden = state === 'idle';
+  updatePill();
+}
 
-  const runState = $('run-state');
-  runState.dataset.state = state;
-  runState.textContent = { idle: '● 대기 중', running: '● 기록 중', paused: '● 일시정지' }[state];
+// 큰 숫자 판(시간·거리) 갱신
+function renderStats() {
+  $('time-text').textContent = formatDuration((session?.elapsedMs ?? 0) / 1000);
+  $('dist-text').textContent = ((session?.distanceM ?? 0) / 1000).toFixed(2);
 }
 
 startButton.addEventListener('click', () => {
   session = new RunSession(currentMode);
   lastGoodPos = null;
   gapFrom = null;
-  // GPS/시뮬레이션 모드면 위치 받기도 같이 시작
-  if (currentMode === 'gps' && !stopSource) gpsButton.click();
-  if (currentMode === 'sim' && !stopSource) simButton.click();
+  // GPS/시뮬레이션이 꺼져 있으면 같이 켬
+  if (currentMode === 'gps' && !stopSource) startSource(startRealGps);
+  if (currentMode === 'sim' && !stopSource) startSim();
   setKeepAwake(keepAwake.checked);
   saveActiveRun(session.toJSON());
   updateRunUi();
@@ -252,24 +275,36 @@ pauseButton.addEventListener('click', () => {
   updateRunUi();
 });
 
-finishButton.addEventListener('click', () => {
-  if (!confirm('달리기를 끝내고 기록을 저장할까요?')) return;
+finishButton.addEventListener('click', async () => {
+  const ok = await askConfirm({
+    title: '달리기를 끝낼까요?',
+    text: '지금까지의 기록이 저장돼요.',
+    yes: '끝내기',
+    no: '계속 달리기',
+  });
+  if (!ok || !session) return;
   session.finish();
   const record = session.toJSON();
   session = null;
   clearActiveRun();
   setKeepAwake(false);
-  if (currentMode !== 'manual') {
+  if (currentMode === 'gps') {
+    // 배터리 아끼기: 끝나면 GPS도 끔 (다시 ▶ 시작을 누르면 켜짐)
     stopCurrentSource();
     showSpeed(0);
+    setStatus('GPS를 껐어요. ▶ 시작을 누르면 다시 켜져요', '', 'GPS 꺼짐');
+  } else if (currentMode === 'sim') {
+    stopCurrentSource();
+    showSpeed(0);
+    setStatus('', '', '시뮬레이션');
   }
   updateRunUi();
+  renderStats();
 
   if (record.elapsedMs < 10000) {
-    setStatus('10초보다 짧은 기록은 저장하지 않아요', 'waiting');
+    statusBox.textContent = '10초보다 짧은 기록은 저장하지 않아요';
     return;
   }
-  setStatus('');
   saveRecordAndShow(record);
 });
 
@@ -285,7 +320,15 @@ function removeRecord(record) {
 }
 
 function refreshRecords() {
-  renderRecordList(loadRecords(), (r) => showResult(r, { onDelete: removeRecord }));
+  const records = loadRecords();
+  renderRecordList(records, (r) => showResult(r, { onDelete: removeRecord }));
+  // 기록 탭 맨 위 요약
+  const totalM = records.reduce((sum, r) => sum + r.distanceM, 0);
+  const totalMin = Math.floor(records.reduce((sum, r) => sum + r.elapsedMs, 0) / 60000);
+  $('total-count').textContent = records.length;
+  $('total-dist').textContent = (totalM / 1000).toFixed(1);
+  const h = Math.floor(totalMin / 60);
+  $('total-time').textContent = h > 0 ? `${h}시간 ${totalMin % 60}분` : `${totalMin}분`;
 }
 
 // 화면이 꺼졌다 켜졌을 때 거리 채우기:
@@ -305,7 +348,7 @@ function onPositionForRun(pos) {
   lastGoodPos = pos;
 }
 
-// 0.25초마다 기록 갱신 + 게임 화면(HUD)에 전달
+// 0.25초마다 기록 갱신 + 화면 숫자 갱신
 let lastSnapshot = 0;
 setInterval(() => {
   if (session) {
@@ -317,7 +360,7 @@ setInterval(() => {
       lastSnapshot = Date.now();
     }
   }
-  game.registry.set('runStats', session ? { elapsedMs: session.elapsedMs, distanceM: session.distanceM } : null);
+  renderStats();
 }, 250);
 
 // 화면이 꺼지거나 다른 앱으로 갈 때 바로 저장
@@ -336,10 +379,11 @@ if (unfinished) {
   if (record.elapsedMs >= 10000) saveRecordAndShow(record);
 }
 
+setMode(currentMode);
 refreshRecords();
 updateRunUi();
 
-// 6) PWA: 서비스 워커 등록 → 한 번 열어 두면 인터넷 없이도 실행됨
+// 7) PWA: 서비스 워커 등록 → 한 번 열어 두면 인터넷 없이도 실행됨
 // 개발 중(npm run dev)에는 옛 파일이 저장돼서 헷갈리지 않도록 배포 버전에서만 켬
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

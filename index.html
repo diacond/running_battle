@@ -17,333 +17,376 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="러닝배틀" />
     <style>
-      * { box-sizing: border-box; }
+      /* ── 색깔 모음 (여기만 바꾸면 앱 전체 색이 바뀜) ── */
+      :root {
+        --bg: #1d2333; /* 맨 뒤 배경 */
+        --card: #2a3247; /* 카드 배경 */
+        --card-2: #3a4560; /* 버튼 등 한 단계 밝은 색 */
+        --text: #f2f4f8;
+        --muted: #a9b3c9; /* 흐린 글자 */
+        --accent: #ff4d6d; /* 강조 (분홍빨강) */
+        --good: #4cd18a;
+        --warn: #f5c542;
+        --nav-h: 64px; /* 아래 탭 메뉴 높이 */
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html { background: var(--bg); }
       body {
         margin: 0;
         min-height: 100vh;
-        background: #1d2333;
-        color: #f2f4f8;
+        background: var(--bg);
+        color: var(--text);
         font-family: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        /* 전체화면일 때 노치·홈 바에 내용이 가려지지 않도록 안전 영역만큼 여백 */
-        padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-          max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-        gap: 16px;
+        /* 위·옆은 노치만큼, 아래는 탭 메뉴 + 홈 바만큼 비워 둠 */
+        padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+          calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px) max(16px, env(safe-area-inset-left));
       }
-      h1 { margin: 0; font-size: 22px; }
-      #game {
-        width: 100%;
-        max-width: 960px;
-        aspect-ratio: 16 / 9; /* 게임 화면 비율(960x540)에 딱 맞춤 */
-        border-radius: 12px;
-        overflow: hidden;
-      }
-      #game canvas { display: block; }
-      .panel {
-        width: 100%;
-        max-width: 960px;
-        background: #2a3247;
-        border-radius: 12px;
-        padding: 16px 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .readout { display: flex; gap: 32px; flex-wrap: wrap; }
-      .readout .label { font-size: 13px; color: #a9b3c9; }
-      .readout .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      input[type='range'] { width: 100%; accent-color: #ff4d6d; height: 24px; }
-      .presets { display: flex; gap: 8px; flex-wrap: wrap; }
-      .presets button {
-        background: #3a4560;
-        color: inherit;
-        border: none;
-        border-radius: 8px;
-        padding: 8px 14px;
-        font-size: 14px;
-        cursor: pointer;
-      }
-      .presets button:hover { background: #4a5778; }
-
-      .tabs { display: flex; gap: 6px; background: #1d2333; padding: 4px; border-radius: 10px; }
-      .tabs button {
-        flex: 1;
-        background: transparent;
-        color: #a9b3c9;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 8px;
-        font-size: 14px;
-        cursor: pointer;
-      }
-      .tabs button[aria-selected='true'] { background: #3a4560; color: #fff; font-weight: 700; }
-      .mode { display: flex; flex-direction: column; gap: 12px; }
-      .mode[hidden] { display: none; }
-      .hint { margin: 0; font-size: 13px; color: #a9b3c9; line-height: 1.5; }
-      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-      select {
-        background: #3a4560;
-        color: inherit;
-        border: none;
-        border-radius: 8px;
-        padding: 9px 10px;
-        font-size: 14px;
-        max-width: 100%;
-      }
-      .primary {
-        background: #ff4d6d;
-        color: #fff;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 18px;
-        font-size: 15px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .primary.running { background: #5b6680; }
-      .status {
-        font-size: 14px;
-        padding: 8px 12px;
-        border-radius: 8px;
-        background: #1d2333;
-        color: #d5dbe8;
-      }
-      .status:empty { display: none; }
-      .status[data-level='good'] { border-left: 4px solid #4cd18a; }
-      .status[data-level='waiting'] { border-left: 4px solid #f5c542; }
-      .status[data-level='weak'] { border-left: 4px solid #ff9f43; }
-      .status[data-level='lost'],
-      .status[data-level='error'] { border-left: 4px solid #ff4d6d; }
-      .truth .value { color: #9fe3b9; }
-      .tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .app { width: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+      button { font: inherit; color: inherit; }
       button:disabled { opacity: 0.4; cursor: not-allowed; }
+      [hidden] { display: none !important; }
+
+      /* 맨 위 제목 줄 */
+      .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+      .topbar h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.3px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--card); color: var(--muted);
+        border-radius: 999px; padding: 6px 12px; font-size: 13px; white-space: nowrap;
+      }
+      .pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+      .pill[data-level='good']::before { background: var(--good); }
+      .pill[data-level='waiting']::before { background: var(--warn); }
+      .pill[data-level='weak']::before { background: #ff9f43; }
+      .pill[data-level='lost']::before,
+      .pill[data-level='error']::before { background: var(--accent); }
+      .pill[data-state='running'] { color: var(--good); }
+      .pill[data-state='running']::before { background: var(--good); animation: blink 1.2s infinite; }
+      .pill[data-state='paused'] { color: var(--warn); }
+      .pill[data-state='paused']::before { background: var(--warn); }
+      @keyframes blink { 50% { opacity: 0.25; } }
+
+      /* 게임 화면 */
+      #game { width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #7ec8f2; }
+      #game canvas { display: block; }
+
+      /* 큰 숫자 판 (시간 / 거리 / 페이스 / 속도) */
+      .stats { background: var(--card); border-radius: 16px; padding: 16px 18px; }
+      .stats .big { text-align: center; }
+      .label { font-size: 13px; color: var(--muted); }
+      .num { font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: -0.5px; }
+      .stats .big .num { font-size: 56px; line-height: 1.05; }
+      .stats .row3 { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 12px; text-align: center; }
+      .stats .row3 > div + div { border-left: 1px solid var(--card-2); }
+      .stats .row3 .num { font-size: 24px; }
+      .unit { font-size: 0.55em; font-weight: 600; color: var(--muted); margin-left: 2px; }
+      .truth { margin-top: 10px; text-align: center; font-size: 13px; color: #9fe3b9; }
 
       /* 시작 / 일시정지 / 종료 */
       .run-controls { display: flex; gap: 10px; }
       .run-controls button {
-        flex: 1;
-        border: none;
-        border-radius: 12px;
-        padding: 16px 12px;
-        font-size: 18px;
-        font-weight: 700;
-        color: #fff;
-        cursor: pointer;
+        flex: 1; border: none; border-radius: 16px; padding: 18px 12px;
+        font-size: 20px; font-weight: 800; color: #fff; cursor: pointer;
+        transition: transform 0.08s;
       }
-      .run-controls button[hidden] { display: none; }
-      #start-button { background: #ff4d6d; }
-      #pause-button { background: #3a4560; }
-      #finish-button { background: #1d2333; border: 2px solid #ff4d6d; }
-      .run-state { font-size: 13px; color: #a9b3c9; }
-      .run-state[data-state='running'] { color: #4cd18a; }
-      .run-state[data-state='paused'] { color: #f5c542; }
+      .run-controls button:active { transform: scale(0.97); }
+      #start-button { background: var(--accent); box-shadow: 0 6px 20px rgba(255, 77, 109, 0.35); }
+      #pause-button { background: var(--card-2); }
+      #finish-button { background: transparent; border: 2px solid var(--accent); color: #ff8fa3; }
 
-      /* 기록 목록 */
+      /* GPS 상태 설명 (작은 글씨) */
+      .status { margin: -4px 2px 0; font-size: 13px; color: var(--muted); line-height: 1.5; text-align: center; }
+      .status:empty { display: none; }
+
+      /* 카드 (설정·기록·꾸미기 공통) */
+      .card { background: var(--card); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
       h2 { margin: 0; font-size: 18px; }
+      h3 { margin: 0; font-size: 15px; color: var(--muted); font-weight: 600; }
+      .hint { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+      /* 수동 속도 조절 */
+      input[type='range'] { width: 100%; accent-color: var(--accent); height: 28px; }
+      .presets { display: flex; gap: 6px; }
+      .presets button {
+        flex: 1; background: var(--card-2); border: none; border-radius: 10px;
+        padding: 9px 4px; font-size: 13px; cursor: pointer;
+      }
+
+      /* 하나만 고르는 버튼 묶음 (설정) */
+      .segmented { display: flex; gap: 4px; background: var(--bg); padding: 4px; border-radius: 12px; }
+      .segmented button {
+        flex: 1; background: transparent; color: var(--muted); border: none; border-radius: 9px;
+        padding: 10px 4px; font-size: 14px; cursor: pointer;
+      }
+      .segmented button[aria-pressed='true'] { background: var(--card-2); color: #fff; font-weight: 700; }
+
+      /* 켜고 끄는 스위치 */
+      .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+      .switch input { appearance: none; flex: none; width: 48px; height: 28px; border-radius: 999px; background: var(--card-2); position: relative; cursor: pointer; transition: background 0.15s; margin: 0; }
+      .switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+      .switch input:checked { background: var(--accent); }
+      .switch input:checked::after { transform: translateX(20px); }
+
+      select {
+        background: var(--card-2); color: inherit; border: none; border-radius: 10px;
+        padding: 10px; font-size: 14px; max-width: 100%;
+      }
+      .primary {
+        background: var(--accent); color: #fff; border: none; border-radius: 12px;
+        padding: 12px 18px; font-size: 15px; font-weight: 700; cursor: pointer;
+      }
+      .primary.running { background: var(--card-2); }
+      .ghost {
+        background: transparent; color: #ff8fa3; border: 1px solid #ff8fa3; border-radius: 12px;
+        padding: 12px 16px; font-size: 15px; cursor: pointer;
+      }
+      .plain { background: var(--card-2); border: none; border-radius: 12px; padding: 12px 16px; font-size: 15px; cursor: pointer; }
+
+      /* 기록 요약 + 목록 */
+      .totals { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; }
+      .totals > div + div { border-left: 1px solid var(--card-2); }
+      .totals .num { font-size: 22px; }
       .records { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
       .records button {
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        background: #1d2333;
-        color: inherit;
-        border: none;
-        border-radius: 10px;
-        padding: 12px 14px;
-        font-size: 14px;
-        text-align: left;
-        cursor: pointer;
+        width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        background: var(--card); border: none; border-radius: 14px; padding: 14px 16px;
+        font-size: 14px; text-align: left; cursor: pointer;
       }
-      .records .date { color: #a9b3c9; font-size: 13px; }
-      .records .main { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .records .sub { color: #a9b3c9; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+      .records .date { color: var(--muted); font-size: 13px; }
+      .records .main { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+      .records .sub { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; line-height: 1.5; }
+      .empty { text-align: center; padding: 28px 12px; }
+      .empty .icon { font-size: 40px; }
 
       /* 캐릭터 꾸미기 */
-      .look-panel summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; }
-      .look-panel summary::-webkit-details-marker { display: none; }
-      .look-panel summary::after { content: '펼치기 ▾'; font-size: 13px; color: #a9b3c9; }
-      .look-panel[open] summary::after { content: '접기 ▴'; }
-      #look-editor { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
-      .look-label { font-size: 13px; color: #a9b3c9; margin-bottom: 6px; }
+      /* 꾸미기 탭: 아래로 내려도 캐릭터가 위에 계속 보이게 */
+      #look-game-slot { position: sticky; top: 0; z-index: 5; padding-top: 4px; background: var(--bg); }
+      #look-editor { display: flex; flex-direction: column; gap: 16px; }
+      .look-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
       .chips { display: flex; flex-wrap: wrap; gap: 8px; }
       .chip {
-        background: #3a4560;
-        color: inherit;
-        border: 2px solid transparent;
-        border-radius: 999px;
-        padding: 8px 14px;
-        font-size: 14px;
-        cursor: pointer;
+        background: var(--card-2); border: 2px solid transparent; border-radius: 999px;
+        padding: 8px 14px; font-size: 14px; cursor: pointer;
       }
-      .chip[aria-pressed='true'] { background: #ff4d6d; color: #fff; font-weight: 700; }
-      .swatch {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        border: 2px solid #1d2333;
-        cursor: pointer;
-        padding: 0;
-      }
-      .swatch[aria-pressed='true'] { outline: 3px solid #ff4d6d; outline-offset: 2px; }
+      .chip[aria-pressed='true'] { background: var(--accent); color: #fff; font-weight: 700; }
+      .swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--bg); cursor: pointer; padding: 0; }
+      .swatch[aria-pressed='true'] { outline: 3px solid var(--accent); outline-offset: 2px; }
       .number-input {
-        width: 90px;
-        background: #1d2333;
-        color: inherit;
-        border: 1px solid #3a4560;
-        border-radius: 8px;
-        padding: 9px 10px;
-        font-size: 16px;
+        width: 90px; background: var(--bg); color: inherit; border: 1px solid var(--card-2);
+        border-radius: 10px; padding: 10px; font-size: 16px;
       }
 
-      /* 결과 화면 */
-      dialog {
-        width: min(440px, calc(100vw - 32px));
-        max-height: calc(100vh - 32px);
-        border: none;
-        border-radius: 16px;
-        padding: 20px;
-        background: #2a3247;
-        color: #f2f4f8;
+      /* 아래 탭 메뉴 (화면 맨 아래에 고정) */
+      .nav {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+        display: flex; justify-content: center;
+        background: rgba(20, 25, 38, 0.96); backdrop-filter: blur(8px);
+        border-top: 1px solid var(--card);
+        padding-bottom: env(safe-area-inset-bottom);
       }
-      dialog::backdrop { background: rgba(8, 11, 20, 0.7); }
-      dialog h2 { font-size: 22px; }
-      .result-hero { font-size: 44px; font-weight: 800; margin: 12px 0 4px; font-variant-numeric: tabular-nums; }
-      .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
-      .result-grid .label { font-size: 13px; color: #a9b3c9; }
-      .result-grid .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .nav-inner { display: flex; width: 100%; max-width: 560px; height: var(--nav-h); }
+      .nav button {
+        flex: 1; background: none; border: none; color: var(--muted); cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+        font-size: 12px;
+      }
+      .nav button .icon { font-size: 22px; line-height: 1; filter: grayscale(1); opacity: 0.7; }
+      .nav button[aria-selected='true'] { color: #fff; font-weight: 700; }
+      .nav button[aria-selected='true'] .icon { filter: none; opacity: 1; }
+
+      /* 팝업 (결과 화면, 확인 창) */
+      dialog {
+        width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+        border: none; border-radius: 20px; padding: 22px; background: var(--card); color: var(--text);
+      }
+      dialog::backdrop { background: rgba(8, 11, 20, 0.75); }
+      dialog h2 { font-size: 20px; }
+      .result-hero { font-size: 52px; margin: 10px 0 2px; text-align: center; }
+      #result-date { text-align: center; }
+      .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+      .result-grid > div { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+      .result-grid .num { font-size: 20px; }
       .splits { margin: 0 0 12px; padding: 0; list-style: none; font-size: 14px; font-variant-numeric: tabular-nums; }
-      .splits li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #3a4560; }
-      .dialog-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
-      .ghost { background: transparent; color: #ff8fa3; border: 1px solid #ff8fa3; border-radius: 8px; padding: 10px 16px; font-size: 15px; cursor: pointer; }
+      .splits li { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid var(--card-2); }
+      .dialog-buttons { display: flex; gap: 10px; margin-top: 8px; }
+      .dialog-buttons button { flex: 1; }
+      #confirm-dialog { text-align: center; }
+      #confirm-dialog p { margin: 10px 0 18px; }
     </style>
   </head>
   <body>
-    <h1>🏃 Running Battle</h1>
+    <div class="app">
+      <!-- 맨 위: 제목 + 상태 (GPS 신호 / 기록 중) -->
+      <header class="topbar">
+        <h1>🏃 러닝배틀</h1>
+        <span class="pill" id="top-pill">대기 중</span>
+      </header>
 
-    <!-- Phaser 게임 화면이 이 안에 그려집니다 -->
-    <div id="game"></div>
+      <!-- ═════════ 🏃 달리기 탭 ═════════ -->
+      <section data-page="run" class="app">
+        <!-- Phaser 게임 화면이 이 안에 그려집니다 -->
+        <div id="game"></div>
 
-    <div class="panel">
-      <!-- 달리기 시작 / 일시정지 / 종료 -->
-      <div class="run-controls">
-        <button id="start-button">▶ 시작</button>
-        <button id="pause-button" hidden>⏸ 일시정지</button>
-        <button id="finish-button" hidden>■ 종료</button>
-      </div>
-      <div class="row hint">
-        <span class="run-state" id="run-state" data-state="idle">● 대기 중</span>
-        <label><input type="checkbox" id="keep-awake" /> 달리는 동안 화면 켜두기</label>
-      </div>
-
-      <!-- 속도 입력 방식 고르기 -->
-      <div class="tabs" role="tablist">
-        <button role="tab" data-mode="manual" aria-selected="true">🎚️ 수동</button>
-        <button role="tab" data-mode="gps" aria-selected="false">📍 GPS</button>
-        <button role="tab" data-mode="sim" aria-selected="false">🧪 시뮬레이션</button>
-      </div>
-
-      <div class="readout">
-        <div>
-          <div class="label">속도</div>
-          <div class="value"><span id="speed-text">0.0</span> km/h</div>
+        <div class="stats">
+          <div class="big">
+            <div class="label">시간</div>
+            <div class="num" id="time-text">00:00</div>
+          </div>
+          <div class="row3">
+            <div>
+              <div class="label">거리</div>
+              <div class="num"><span id="dist-text">0.00</span><span class="unit">km</span></div>
+            </div>
+            <div>
+              <div class="label">페이스</div>
+              <div class="num"><span id="pace-text">--:--</span><span class="unit">/km</span></div>
+            </div>
+            <div>
+              <div class="label">속도</div>
+              <div class="num"><span id="speed-text">0.0</span><span class="unit">km/h</span></div>
+            </div>
+          </div>
+          <div class="truth" id="truth-card" hidden>
+            정답 속도 (시뮬레이션) <b id="truth-text">0.0</b> km/h <span id="truth-label"></span>
+          </div>
         </div>
-        <div>
-          <div class="label">페이스</div>
-          <div class="value"><span id="pace-text">--:--</span> /km</div>
-        </div>
-        <div class="truth" id="truth-card" hidden>
-          <div class="label">정답 속도 (시뮬레이션)</div>
-          <div class="value"><span id="truth-text">0.0</span> km/h <small id="truth-label"></small></div>
-        </div>
-      </div>
 
-      <div class="status" id="status"></div>
-
-      <!-- 수동: 러닝머신이나 테스트용 -->
-      <div class="mode" data-mode-panel="manual">
-        <input id="speed-slider" type="range" min="0" max="20" step="0.5" value="8" aria-label="달리기 속도 (km/h)" />
-        <div class="presets">
-          <button data-speed="0">멈춤</button>
-          <button data-speed="5">걷기 5</button>
-          <button data-speed="8">조깅 8</button>
-          <button data-speed="10">러닝 10</button>
-          <button data-speed="15">질주 15</button>
+        <!-- 수동 모드일 때만 보이는 속도 조절 -->
+        <div class="card" id="manual-controls" hidden>
+          <input id="speed-slider" type="range" min="0" max="20" step="0.5" value="8" aria-label="달리기 속도 (km/h)" />
+          <div class="presets">
+            <button data-speed="0">멈춤</button>
+            <button data-speed="5">걷기</button>
+            <button data-speed="8">조깅</button>
+            <button data-speed="10">러닝</button>
+            <button data-speed="15">질주</button>
+          </div>
         </div>
-      </div>
 
-      <!-- GPS: 야외 러닝 -->
-      <div class="mode" data-mode-panel="gps" hidden>
-        <p class="hint">
-          야외에서 폰으로 사용하세요. <b>▶ 시작</b>을 누르면 GPS도 같이 켜져요.<br />
-          웹에서는 화면이 꺼지면 GPS가 멈춰서, 꺼져 있던 구간은 <b>직선거리로 추정</b>해요.
-          (정확하게 재려면 "화면 켜두기"를 켜세요)<br />
-          PC에서는 위치가 움직이지 않으니 속도가 0으로 나오는 게 정상이에요.
-        </p>
-        <div class="row">
-          <button class="primary" id="gps-button">GPS 시작</button>
+        <!-- 시작 / 일시정지 / 종료 -->
+        <div class="run-controls">
+          <button id="start-button">▶ 시작</button>
+          <button id="pause-button" hidden>⏸ 일시정지</button>
+          <button id="finish-button" hidden>■ 종료</button>
         </div>
-      </div>
+        <div class="status" id="status"></div>
+      </section>
 
-      <!-- 시뮬레이션: PC 테스트용 가짜 GPS -->
-      <div class="mode" data-mode-panel="sim" hidden>
-        <p class="hint">
-          가짜 GPS 위치를 1초마다 만들어서 실제 GPS와 똑같은 계산을 거쳐요.<br />
-          위의 <b>속도</b>(계산값)가 <b>정답 속도</b>를 몇 초 늦게 비슷하게 따라가면 성공이에요.
-        </p>
-        <div class="row">
-          <select id="sim-scenario" aria-label="시나리오"></select>
-          <label><input type="checkbox" id="sim-noise" checked /> GPS 오차 넣기</label>
+      <!-- ═════════ 📋 기록 탭 ═════════ -->
+      <section data-page="records" class="app" hidden>
+        <div class="card">
+          <h2>📋 내 기록</h2>
+          <div class="totals">
+            <div><div class="label">횟수</div><div class="num" id="total-count">0</div></div>
+            <div><div class="label">총 거리</div><div class="num"><span id="total-dist">0.0</span><span class="unit">km</span></div></div>
+            <div><div class="label">총 시간</div><div class="num" id="total-time">0:00</div></div>
+          </div>
         </div>
-        <div class="row">
-          <button class="primary" id="sim-button">시뮬레이션 시작</button>
+        <div class="card empty" id="records-empty">
+          <div class="icon">🏁</div>
+          <p class="hint">아직 기록이 없어요.<br />달리기 탭에서 ▶ 시작을 눌러 보세요!</p>
         </div>
-      </div>
+        <ul class="records" id="records-list"></ul>
+      </section>
 
-      <!-- 테스트용: 밤낮 미리보기 -->
-      <div class="row hint">
-        <label for="theme-select">🕒 배경 시간대</label>
-        <select id="theme-select">
-          <option value="auto">자동 (현재 시각)</option>
-          <option value="day">낮</option>
-          <option value="evening">저녁·새벽</option>
-          <option value="night">밤</option>
-        </select>
-      </div>
+      <!-- ═════════ 🎨 꾸미기 탭 ═════════ -->
+      <section data-page="look" class="app" hidden>
+        <!-- 꾸미기 탭에서도 캐릭터가 보이도록, 게임 화면이 이쪽으로 옮겨 와요 -->
+        <div id="look-game-slot"></div>
+        <div class="card">
+          <h2>🎨 캐릭터 꾸미기</h2>
+          <div id="look-editor"></div>
+        </div>
+      </section>
+
+      <!-- ═════════ ⚙️ 설정 탭 ═════════ -->
+      <section data-page="settings" class="app" hidden>
+        <div class="card">
+          <h2>⚙️ 설정</h2>
+          <h3>속도 재는 방법</h3>
+          <div class="segmented" id="mode-buttons">
+            <button data-mode="gps" aria-pressed="false">📍 GPS</button>
+            <button data-mode="manual" aria-pressed="false">🎚️ 수동</button>
+            <button data-mode="sim" aria-pressed="false">🧪 시뮬</button>
+          </div>
+          <p class="hint" data-mode-hint="gps">
+            야외에서 달릴 때 쓰세요. 이 모드를 고르면 GPS 신호를 미리 잡아 둬요.<br />
+            웹에서는 화면이 꺼지면 GPS가 멈춰서, 꺼져 있던 구간은 <b>직선거리로 추정</b>해요.
+          </p>
+          <p class="hint" data-mode-hint="manual" hidden>러닝머신이나 테스트용이에요. 달리기 탭에서 속도를 직접 정해요.</p>
+          <div data-mode-hint="sim" hidden class="app" style="gap: 10px">
+            <p class="hint">
+              PC 테스트용 가짜 GPS예요. 계산된 <b>속도</b>가 <b>정답 속도</b>를 몇 초 늦게 비슷하게 따라가면 성공이에요.
+            </p>
+            <div class="row">
+              <select id="sim-scenario" aria-label="시나리오"></select>
+              <label><input type="checkbox" id="sim-noise" checked /> GPS 오차 넣기</label>
+            </div>
+          </div>
+          <p class="hint" id="mode-locked" hidden>달리는 중에는 바꿀 수 없어요.</p>
+        </div>
+
+        <div class="card">
+          <label class="switch">
+            <span>
+              달리는 동안 화면 켜두기<br />
+              <span class="hint">켜면 GPS가 안 끊겨 더 정확하지만 배터리를 더 써요.</span>
+            </span>
+            <input type="checkbox" id="keep-awake" />
+          </label>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between">
+            <label for="theme-select">🕒 배경 시간대</label>
+            <select id="theme-select">
+              <option value="auto">자동 (현재 시각)</option>
+              <option value="day">낮</option>
+              <option value="evening">저녁·새벽</option>
+              <option value="night">밤</option>
+            </select>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <!-- 캐릭터 꾸미기 (누르면 펼쳐짐) -->
-    <details class="panel look-panel">
-      <summary><h2>🎨 캐릭터 꾸미기</h2></summary>
-      <div id="look-editor"></div>
-    </details>
-
-    <!-- 내 기록 목록 -->
-    <section class="panel">
-      <h2>📋 내 기록</h2>
-      <p class="hint" id="records-empty">아직 기록이 없어요. ▶ 시작을 눌러 달려 보세요!</p>
-      <ul class="records" id="records-list"></ul>
-    </section>
+    <!-- 아래 탭 메뉴 -->
+    <nav class="nav">
+      <div class="nav-inner" role="tablist">
+        <button role="tab" data-tab="run" aria-selected="true"><span class="icon">🏃</span>달리기</button>
+        <button role="tab" data-tab="records" aria-selected="false"><span class="icon">📋</span>기록</button>
+        <button role="tab" data-tab="look" aria-selected="false"><span class="icon">🎨</span>꾸미기</button>
+        <button role="tab" data-tab="settings" aria-selected="false"><span class="icon">⚙️</span>설정</button>
+      </div>
+    </nav>
 
     <!-- 결과 화면 (달리기를 끝내거나 기록을 누르면 열림) -->
     <dialog id="result-dialog">
       <h2>🏁 달리기 결과</h2>
       <div class="hint" id="result-date"></div>
-      <div class="result-hero" id="result-distance"></div>
+      <div class="result-hero num" id="result-distance"></div>
       <div class="result-grid">
-        <div><div class="label">시간</div><div class="value" id="result-time"></div></div>
-        <div><div class="label">평균 페이스</div><div class="value" id="result-pace"></div></div>
-        <div><div class="label">평균 속도</div><div class="value" id="result-speed"></div></div>
-        <div><div class="label">최고 속도</div><div class="value" id="result-max"></div></div>
+        <div><div class="label">시간</div><div class="num" id="result-time"></div></div>
+        <div><div class="label">평균 페이스</div><div class="num" id="result-pace"></div></div>
+        <div><div class="label">평균 속도</div><div class="num" id="result-speed"></div></div>
+        <div><div class="label">최고 속도</div><div class="num" id="result-max"></div></div>
       </div>
       <ul class="splits" id="result-splits"></ul>
       <p class="hint" id="result-note"></p>
       <div class="dialog-buttons">
         <button class="ghost" id="result-delete">기록 삭제</button>
         <button class="primary" id="result-close">확인</button>
+      </div>
+    </dialog>
+
+    <!-- 확인 창 (브라우저 기본 confirm 대신) -->
+    <dialog id="confirm-dialog">
+      <h2 id="confirm-title"></h2>
+      <p class="hint" id="confirm-text"></p>
+      <div class="dialog-buttons">
+        <button class="plain" id="confirm-no"></button>
+        <button class="primary" id="confirm-yes"></button>
       </div>
     </dialog>
 

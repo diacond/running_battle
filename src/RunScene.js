@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { Runner } from './Runner.js';
 import { THEMES, themeForHour } from './themes.js';
-import { formatPace, formatDistance, formatDuration } from './format.js';
 
 export const WIDTH = 960;
 export const HEIGHT = 540;
@@ -250,20 +249,9 @@ export class RunScene extends Phaser.Scene {
   }
 
   // ── 왼쪽 위 기록판 + 오른쪽 위 시계 ─────────────────────────────
+  // 시간·거리·페이스는 게임 아래 큰 숫자 판(HTML)에 보여 주고, 게임 안에는 시계만 둠
+  // (게임 화면 안의 글씨는 폰에서 너무 작아져서)
   createHud() {
-    const box = this.add.graphics().setDepth(20); // 기록판은 캐릭터보다 위에
-    box.fillStyle(0x0d1220, 0.55);
-    box.fillRoundedRect(16, 16, 250, 132, 14);
-
-    const labelStyle = { fontFamily: 'sans-serif', fontSize: '15px', color: '#b8c2d8' };
-    const valueStyle = { fontFamily: 'sans-serif', fontSize: '28px', color: '#ffffff', fontStyle: 'bold' };
-    this.hud = {};
-    ['시간', '거리', '페이스'].forEach((label, i) => {
-      const y = 30 + i * 38;
-      this.add.text(32, y + 8, label, labelStyle).setDepth(20);
-      this.hud[label] = this.add.text(100, y, '', valueStyle).setDepth(20);
-    });
-
     this.clockText = this.add
       .text(WIDTH - 20, 20, '', {
         fontFamily: 'sans-serif',
@@ -278,12 +266,6 @@ export class RunScene extends Phaser.Scene {
   }
 
   updateHud() {
-    // 기록 중일 때만 시간·거리가 올라감 (시작 전에는 0)
-    const stats = this.registry.get('runStats');
-    this.hud['시간'].setText(formatDuration((stats?.elapsedMs ?? 0) / 1000));
-    this.hud['거리'].setText(formatDistance(stats?.distanceM ?? 0));
-    this.hud['페이스'].setText(`${formatPace(this.currentSpeedKmh)} /km`);
-
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const mm = String(now.getMinutes()).padStart(2, '0');
